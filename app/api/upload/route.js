@@ -6,11 +6,11 @@ import { v4 as uuidv4 } from 'uuid';
 export async function POST(req) {
   try {
     console.log("Upload request received");
-    
+
     // Initialize Supabase client
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    
+
     if (!supabaseUrl || !supabaseKey) {
       console.error("Missing Supabase credentials");
       return NextResponse.json(
@@ -18,24 +18,24 @@ export async function POST(req) {
         { status: 500 }
       );
     }
-    
+
     const supabase = createClient(supabaseUrl, supabaseKey);
     console.log("Supabase client initialized");
 
     // Get form data
     const formData = await req.formData();
     const file = formData.get("video");
-    
+
     if (!file) {
       console.error("No file uploaded");
       return NextResponse.json(
-        { error: "No video file uploaded" }, 
+        { error: "No video file uploaded" },
         { status: 400 }
       );
     }
-    
+
     console.log(`File received: ${file.name}, size: ${file.size} bytes`);
-    
+
     // Get user ID
     const userId = req.headers.get("x-user-id");
     if (!userId) {
@@ -45,7 +45,7 @@ export async function POST(req) {
         { status: 401 }
       );
     }
-    
+
     // Store video settings
     const enableHighlight = formData.get("enableHighlight") === "true";
     const highlightColor = formData.get("highlightColor") || "#00FF00";
@@ -58,19 +58,19 @@ export async function POST(req) {
     const position = formData.get("position") || "bottom";
     const fontSize = formData.get("fontSize") || "24";
     const fontType = formData.get("fontType") || "Arial";
-    
+
     console.log("Processing form data completed");
-    
+
     // Generate unique filename
     const filename = `${uuidv4()}.mp4`;
     const filePath = `${userId}/${filename}`;
-    
+
     console.log(`Uploading to path: ${filePath}`);
-    
+
     // Upload video to Supabase Storage
     const fileBuffer = await file.arrayBuffer();
     console.log(`File buffer created: ${fileBuffer.byteLength} bytes`);
-    
+
     try {
       // Upload to Supabase Storage - this part works
       const { data, error } = await supabase
@@ -80,12 +80,12 @@ export async function POST(req) {
           contentType: 'video/mp4',
           cacheControl: '3600'
         });
-        
+
       if (error) {
         console.error("Storage upload error:", error);
         throw error;
       }
-      
+
       // Get public URL - this part also works
       const { data: publicUrlData } = supabase
         .storage
@@ -95,22 +95,18 @@ export async function POST(req) {
       // Log the URL for debugging
       console.log("Generated public URL:", publicUrlData.publicUrl);
 
-      // Fix - Use S3 endpoint format
-      // Convert standard URL to S3 URL format
-      let videoUrl = publicUrlData.publicUrl;
+      // Now properly construct the S3 URL format
+      // This is consistent with your storage endpoint URL format
+      let correctVideoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}`;
+      console.log("Corrected S3 URL format:", correctVideoUrl);
 
-      // Check if URL doesn't already use S3 format
-      if (!videoUrl.includes('/storage/v1/s3/')) {
-        // Construct the URL with s3 path
-        videoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}`;
-        console.log("Fixed URL with S3 path:", videoUrl);
-        // Store the corrected URL back
-        publicUrlData.publicUrl = videoUrl;
-      }
+      // Store this URL in both places for consistency
+      let videoUrl = correctVideoUrl;
+      publicUrlData.publicUrl = correctVideoUrl;
 
       console.log("Final URL to be used:", publicUrlData.publicUrl);
       console.log("Storage steps completed successfully");
-      
+
       try {
         // Insert into videos table - this might be failing
         console.log("Inserting into videos table with user_id:", userId);
@@ -124,14 +120,14 @@ export async function POST(req) {
           })
           .select()
           .single();
-          
+
         if (videoError) {
           console.error("Database error on video insert:", videoError);
-          
+
           // Check if it's a constraint violation
           if (videoError.code === '23503' || videoError.code === '23505') {
             console.log("Constraint violation detected, using workaround...");
-            
+
             // Try a simpler insert without returning data
             const { error: simpleInsertError } = await supabase
               .from('videos')
@@ -141,12 +137,12 @@ export async function POST(req) {
                 user_id: userId.toString(), // Convert to string explicitly
                 status: 'uploaded'
               });
-              
+
             if (simpleInsertError) {
               console.error("Simplified insert also failed:", simpleInsertError);
               throw simpleInsertError;
             }
-            
+
             // Return partial success with just the URL
             return NextResponse.json({
               message: "Video uploaded but metadata could not be saved",
@@ -154,13 +150,13 @@ export async function POST(req) {
               status: 'uploaded'
             }, { status: 207 });
           }
-          
+
           throw videoError;
         }
 
         // If we got here, video insert succeeded
         console.log("Video inserted with ID:", videoData.id);
-        
+
         // Now insert into captions table
         console.log("Inserting into captions table");
         const { error: captionError } = await supabase
@@ -179,10 +175,10 @@ export async function POST(req) {
             border_color: borderColor,
             border_size: borderSize
           });
-          
+
         if (captionError) {
           console.error("Captions insert error:", captionError);
-          
+
           // If captions insert fails, still return success with video info
           return NextResponse.json({
             message: "Video uploaded but caption preferences not saved",
@@ -191,23 +187,23 @@ export async function POST(req) {
             error: captionError.message
           });
         }
-        
+
         // Replace lines 185-204 with this updated code:
         // Don't bother with signed URLs, they require authentication
         // Instead use public URL with download parameter which works with the correct policies
-        let videoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}?download=true`;
-        console.log("Using public URL with download parameter:", videoUrl);
+        let finalVideoUrl = `${correctVideoUrl}?download=true`;
+        console.log("Final URL with download parameter:", finalVideoUrl);
 
         // Return success to the client with the updated URL
         return NextResponse.json({
           message: "Video uploaded successfully",
-          videoUrl: videoUrl,
+          videoUrl: finalVideoUrl,
           videoId: videoData?.id || 'unknown'
         });
-        
+
       } catch (dbError) {
         console.error("Database operation error:", dbError);
-        
+
         // Still return a partial success since the video was uploaded
         return NextResponse.json({
           message: "Video uploaded to storage but database operation failed",
@@ -215,7 +211,7 @@ export async function POST(req) {
           error: dbError.message
         }, { status: 207 }); // 207 Multi-Status
       }
-      
+
     } catch (error) {
       console.error("Error in upload handler:", error);
       return NextResponse.json(
