@@ -72,7 +72,7 @@ export async function POST(req) {
     console.log(`File buffer created: ${fileBuffer.byteLength} bytes`);
     
     try {
-      // Upload to Supabase Storage
+      // Upload to Supabase Storage - this part works
       const { data, error } = await supabase
         .storage
         .from('videos')
@@ -86,76 +86,117 @@ export async function POST(req) {
         throw error;
       }
       
-      console.log("File uploaded successfully to Supabase Storage");
-      
-      // Get public URL
+      // Get public URL - this part also works
       const { data: publicUrlData } = supabase
         .storage
         .from('videos')
         .getPublicUrl(filePath);
+
+      console.log("Storage steps completed successfully");
       
-      if (!publicUrlData || !publicUrlData.publicUrl) {
-        console.error("Failed to get public URL");
-        throw new Error("Failed to get public URL for uploaded file");
-      }
-      
-      console.log(`Public URL generated: ${publicUrlData.publicUrl}`);
-      
-      // Store video in database
-      console.log("Inserting video record into database");
-      const { data: videoData, error: videoError } = await supabase
-        .from('videos')
-        .insert({
-          title: file.name,
-          video_url: publicUrlData.publicUrl,
-          user_id: userId,
-          status: 'uploaded'
-        })
-        .select()
-        .single();
+      try {
+        // Insert into videos table - this might be failing
+        console.log("Inserting into videos table with user_id:", userId);
+        const { data: videoData, error: videoError } = await supabase
+          .from('videos')
+          .insert({
+            title: file.name,
+            video_url: publicUrlData.publicUrl,
+            user_id: userId,
+            status: 'uploaded'
+          })
+          .select()
+          .single();
+          
+        if (videoError) {
+          console.error("Database error on video insert:", videoError);
+          
+          // Check if it's a constraint violation
+          if (videoError.code === '23503' || videoError.code === '23505') {
+            console.log("Constraint violation detected, using workaround...");
+            
+            // Try a simpler insert without returning data
+            const { error: simpleInsertError } = await supabase
+              .from('videos')
+              .insert({
+                title: file.name,
+                video_url: publicUrlData.publicUrl,
+                user_id: userId.toString(), // Convert to string explicitly
+                status: 'uploaded'
+              });
+              
+            if (simpleInsertError) {
+              console.error("Simplified insert also failed:", simpleInsertError);
+              throw simpleInsertError;
+            }
+            
+            // Return partial success with just the URL
+            return NextResponse.json({
+              message: "Video uploaded but metadata could not be saved",
+              videoUrl: publicUrlData.publicUrl,
+              status: 'uploaded'
+            }, { status: 207 });
+          }
+          
+          throw videoError;
+        }
+
+        // If we got here, video insert succeeded
+        console.log("Video inserted with ID:", videoData.id);
         
-      if (videoError) {
-        console.error("Database insert error (videos):", videoError);
-        throw videoError;
-      }
-      
-      console.log(`Video record created with ID: ${videoData.id}`);
-      
-      // Store caption preferences
-      console.log("Inserting caption preferences");
-      const { error: captionError } = await supabase
-        .from('captions')
-        .insert({
-          video_id: videoData.id,
-          font_type: fontType,
-          font_size: parseInt(fontSize),
-          font_color: fontColor,
-          text_case: textCase,
-          position: position,
-          enable_highlight: enableHighlight,
-          highlight_color: highlightColor,
-          animation: animation,
-          enable_border: enableBorder,
-          border_color: borderColor,
-          border_size: borderSize
+        // Now insert into captions table
+        console.log("Inserting into captions table");
+        const { error: captionError } = await supabase
+          .from('captions')
+          .insert({
+            video_id: videoData.id,
+            font_type: fontType,
+            font_size: parseInt(fontSize),
+            font_color: fontColor,
+            text_case: textCase,
+            position: position,
+            enable_highlight: enableHighlight,
+            highlight_color: highlightColor,
+            animation: animation,
+            enable_border: enableBorder,
+            border_color: borderColor,
+            border_size: borderSize
+          });
+          
+        if (captionError) {
+          console.error("Captions insert error:", captionError);
+          
+          // If captions insert fails, still return success with video info
+          return NextResponse.json({
+            message: "Video uploaded but caption preferences not saved",
+            videoUrl: publicUrlData.publicUrl,
+            videoId: videoData.id,
+            error: captionError.message
+          });
+        }
+        
+        // Everything succeeded
+        return NextResponse.json({
+          message: "Video uploaded successfully",
+          videoUrl: publicUrlData.publicUrl,
+          videoId: videoData.id
         });
         
-      if (captionError) {
-        console.error("Database insert error (captions):", captionError);
-        throw captionError;
+      } catch (dbError) {
+        console.error("Database operation error:", dbError);
+        
+        // Still return a partial success since the video was uploaded
+        return NextResponse.json({
+          message: "Video uploaded to storage but database operation failed",
+          videoUrl: publicUrlData.publicUrl,
+          error: dbError.message
+        }, { status: 207 }); // 207 Multi-Status
       }
       
-      console.log("Caption preferences stored successfully");
-      
-      return NextResponse.json({
-        message: "Video uploaded successfully",
-        videoUrl: publicUrlData.publicUrl,
-        videoId: videoData.id
-      });
-    } catch (storageError) {
-      console.error("Error in storage or database operations:", storageError);
+    } catch (error) {
+      console.error("Error in upload handler:", error);
       return NextResponse.json(
-        { error: "Storage or database operation failed", details: storageError.message },
+        { error: "Upload failed", details: error.message },
         { status: 500 }
       );
     }

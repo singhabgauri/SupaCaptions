@@ -139,18 +139,23 @@ export default function UploadForm() {
       
       clearInterval(progressInterval);
       
-      if (!res.ok) {
-        let errorMessage = "Upload failed";
-        try {
-          const errorData = await res.json();
-          errorMessage = errorData.error || errorData.details || errorMessage;
-        } catch (jsonError) {
-          errorMessage = `Server error: ${res.status} ${res.statusText}`;
-        }
-        throw new Error(errorMessage);
+      const data = await res.json();
+      
+      if (!res.ok && res.status !== 207) { // 207 is partial success
+        throw new Error(data.error || data.details || "Upload failed");
       }
       
-      const data = await res.json();
+      // Handle partial success
+      if (res.status === 207 || data.error) {
+        setProgress(100);
+        setDownloadUrl(data.videoUrl);
+        console.warn("Partial success:", data.error);
+        // Show a warning to the user
+        alert(`Video uploaded but some operations failed: ${data.error}`);
+        return;
+      }
+      
+      // Full success
       setProgress(100);
       setDownloadUrl(data.videoUrl);
       
