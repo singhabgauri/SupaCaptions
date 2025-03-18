@@ -535,14 +535,27 @@ export default function UploadForm() {
                       View Video
                     </a>
                     
-                    {/* Download button - try signed URL first, then fallback to API */}
-                    <a
-                      href={typeof downloadUrl === 'object' ? (downloadUrl.download || downloadUrl.api) : downloadUrl}
-                      download={file ? file.name : "video.mp4"}
+                    {/* Download button - with click handler to force download */}
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const urlToUse = typeof downloadUrl === 'object' 
+                          ? (downloadUrl.download || downloadUrl.api) 
+                          : downloadUrl;
+                        
+                        // Create an invisible anchor and trigger the download
+                        const link = document.createElement('a');
+                        link.href = urlToUse;
+                        link.setAttribute('download', file ? file.name : 'video.mp4');
+                        link.setAttribute('target', '_blank');
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      }}
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ml-2"
                     >
                       Download
-                    </a>
+                    </button>
                   </div>
                 </div>
               </section>
