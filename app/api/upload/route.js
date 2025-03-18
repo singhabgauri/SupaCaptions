@@ -86,35 +86,55 @@ export async function POST(req) {
         throw error;
       }
 
-      // Get public URL - this part also works
+      // Generate a signed URL with 7-day expiration (adjust as needed)
+      console.log("Generating signed URL for secure access");
+      const { data: signedUrlData, error: signedUrlError } = await supabase
+        .storage
+        .from('videos')
+        .createSignedUrl(filePath, 60 * 60 * 24 * 7); // 7 days in seconds
+
+      // Also get the public URL as fallback and for database storage
       const { data: publicUrlData } = supabase
         .storage
         .from('videos')
         .getPublicUrl(filePath);
 
-      // Log the URL for debugging
-      console.log("Generated public URL:", publicUrlData.publicUrl);
+      // Log both URLs for debugging
+      console.log("Public URL:", publicUrlData.publicUrl);
 
-      // Now properly construct the S3 URL format
-      // This is consistent with your storage endpoint URL format
-      let correctVideoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}`;
-      console.log("Corrected S3 URL format:", correctVideoUrl);
+      let finalVideoUrl;
+      let viewUrl;
 
-      // Store this URL in both places for consistency
-      let videoUrl = correctVideoUrl;
-      publicUrlData.publicUrl = correctVideoUrl;
+      if (signedUrlError) {
+        console.error("Failed to generate signed URL:", signedUrlError);
+        // Fall back to public URL
+        finalVideoUrl = `${publicUrlData.publicUrl}?download=true`;
+        viewUrl = publicUrlData.publicUrl;
+      } else {
+        // Use the signed URL which includes authentication
+        finalVideoUrl = signedUrlData.signedUrl;
+        
+        // Create a view URL (without download parameter)
+        // We need to check if the signed URL already has query parameters
+        viewUrl = finalVideoUrl.includes('?') 
+          ? finalVideoUrl.replace(/(\?|&)download=true/, '') 
+          : finalVideoUrl;
+          
+        console.log("Generated signed URL with 7-day expiry");
+      }
 
-      console.log("Final URL to be used:", publicUrlData.publicUrl);
-      console.log("Storage steps completed successfully");
+      // Create an API download URL as fallback
+      const apiDownloadUrl = `/api/download?userId=${encodeURIComponent(userId)}&filename=${encodeURIComponent(filename)}`;
 
+      // Proceed with database operations
       try {
-        // Insert into videos table - this might be failing
+        // Insert into videos table
         console.log("Inserting into videos table with user_id:", userId);
         const { data: videoData, error: videoError } = await supabase
           .from('videos')
           .insert({
             title: file.name,
-            video_url: publicUrlData.publicUrl,
+            video_url: publicUrlData.publicUrl, // Store the permanent public URL in database
             user_id: userId,
             status: 'uploaded'
           })
@@ -146,7 +166,7 @@ export async function POST(req) {
             // Return partial success with just the URL
             return NextResponse.json({
               message: "Video uploaded but metadata could not be saved",
-              videoUrl: publicUrlData.publicUrl,
+              videoUrl: finalVideoUrl,  // Use the finalVideoUrl with download param
               status: 'uploaded'
             }, { status: 207 });
           }
@@ -182,22 +202,20 @@ export async function POST(req) {
           // If captions insert fails, still return success with video info
           return NextResponse.json({
             message: "Video uploaded but caption preferences not saved",
-            videoUrl: publicUrlData.publicUrl,
+            videoUrl: viewUrl,
+            downloadUrl: finalVideoUrl,
+            apiDownloadUrl: apiDownloadUrl,
             videoId: videoData.id,
             error: captionError.message
-          });
+          }, { status: 207 });
         }
 
-        // Replace lines 185-204 with this updated code:
-        // Don't bother with signed URLs, they require authentication
-        // Instead use public URL with download parameter which works with the correct policies
-        let finalVideoUrl = `${correctVideoUrl}?download=true`;
-        console.log("Final URL with download parameter:", finalVideoUrl);
-
-        // Return success to the client with the updated URL
+        // Return complete success
         return NextResponse.json({
           message: "Video uploaded successfully",
-          videoUrl: finalVideoUrl,
+          videoUrl: viewUrl,             // URL for viewing (without download parameter)
+          downloadUrl: finalVideoUrl,    // Signed URL with download parameter
+          apiDownloadUrl: apiDownloadUrl, // Fallback API download URL
           videoId: videoData?.id || 'unknown'
         });
 
@@ -207,7 +225,9 @@ export async function POST(req) {
         // Still return a partial success since the video was uploaded
         return NextResponse.json({
           message: "Video uploaded to storage but database operation failed",
-          videoUrl: publicUrlData.publicUrl,
+          videoUrl: viewUrl,
+          downloadUrl: finalVideoUrl,
+          apiDownloadUrl: apiDownloadUrl,
           error: dbError.message
         }, { status: 207 }); // 207 Multi-Status
       }

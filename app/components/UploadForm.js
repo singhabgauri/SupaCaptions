@@ -186,6 +186,24 @@ export default function UploadForm() {
     } finally {
       setUploading(false);
     }
+
+    try {
+      // Process response
+      if (res.ok || res.status === 207) {
+        const data = await res.json();
+        
+        // Store all URLs
+        setDownloadUrl({
+          view: data.videoUrl,             // For viewing (no download)
+          download: data.downloadUrl,      // For downloading (signed)
+          api: data.apiDownloadUrl         // API fallback
+        });
+        
+        setProgress(100);
+      }
+    } catch (error) {
+      // Your error handling
+    }
   };
 
   // For now, let's add a shortcut for testing:
@@ -505,13 +523,11 @@ export default function UploadForm() {
                     <div>
                       <h3 className="text-lg font-semibold text-emerald-300">Processing Complete!</h3>
                       <p className="text-sm text-emerald-200">Your video is ready to download</p>
-                      {/* Add this to debug the URL */}
-                      <p className="text-xs text-white/50 break-all mt-2">{downloadUrl}</p>
                     </div>
                     
-                    {/* View link - use download=false */}
+                    {/* View button - use view URL */}
                     <a
-                      href={downloadUrl.includes('?') ? downloadUrl.replace('download=true', 'download=false') : `${downloadUrl}?download=false`}
+                      href={typeof downloadUrl === 'object' ? downloadUrl.view : downloadUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
@@ -519,9 +535,9 @@ export default function UploadForm() {
                       View Video
                     </a>
                     
-                    {/* Download link - ensure download=true parameter */}
+                    {/* Download button - try signed URL first, then fallback to API */}
                     <a
-                      href={downloadUrl.includes('?') ? downloadUrl : `${downloadUrl}?download=true`}
+                      href={typeof downloadUrl === 'object' ? (downloadUrl.download || downloadUrl.api) : downloadUrl}
                       download={file ? file.name : "video.mp4"}
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ml-2"
                     >
