@@ -163,32 +163,6 @@ export default function UploadForm() {
     }
   };
 
-  // Add authentication UI
-  const renderAuthSection = () => {
-    if (user) {
-      return (
-        <div className="mb-4 text-sm text-white/70">
-          Logged in as: <span className="text-violet-300">{user.email}</span>
-          <button 
-            onClick={() => supabase.auth.signOut()}
-            className="ml-4 text-violet-400 hover:text-violet-300 underline"
-          >
-            Sign Out
-          </button>
-        </div>
-      );
-    }
-    
-    return (
-      <div className="mb-6 p-4 bg-violet-900/20 border border-violet-500/20 rounded-lg">
-        <p className="text-sm text-white/70 mb-3">
-          Sign in to upload and access your captioned videos
-        </p>
-        <LoginForm />
-      </div>
-    );
-  };
-
   // For now, let's add a shortcut for testing:
   const handleBypassAuth = () => {
     setUser({ id: "temp-user-" + uuidv4(), email: "test@example.com" });
