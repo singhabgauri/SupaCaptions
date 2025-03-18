@@ -171,7 +171,10 @@ export default function UploadForm() {
       
       // Full success - still check and fix URL format
       setProgress(100);
-      
+
+      // Extract the video URL from the response data
+      let videoUrl = data.videoUrl;
+
       // The conditional logic here could be simplified
       if (videoUrl) {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
