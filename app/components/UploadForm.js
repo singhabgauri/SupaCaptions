@@ -148,16 +148,44 @@ export default function UploadForm() {
       // Handle partial success
       if (res.status === 207 || data.error) {
         setProgress(100);
-        setDownloadUrl(data.videoUrl);
+        
+        // Fix: Convert URL to S3 format if needed
+        let videoUrl = data.videoUrl;
+        if (videoUrl && !videoUrl.includes('/storage/v1/s3/')) {
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+          // Extract file path from URL (get userId and filename)
+          const pathParts = videoUrl.split('/');
+          const filePath = pathParts.slice(-2).join('/'); // Gets "userId/filename.mp4"
+          
+          // Reconstruct with S3 path
+          videoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}`;
+          console.log("Fixed video URL with S3 path:", videoUrl);
+        }
+        
+        setDownloadUrl(videoUrl);
         console.warn("Partial success:", data.error);
         // Show a warning to the user
         alert(`Video uploaded but some operations failed: ${data.error}`);
         return;
       }
       
-      // Full success
+      // Full success - still check and fix URL format
       setProgress(100);
-      setDownloadUrl(data.videoUrl);
+      
+      // Fix: Convert URL to S3 format if needed
+      let videoUrl = data.videoUrl;
+      if (videoUrl && !videoUrl.includes('/storage/v1/s3/')) {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        // Extract file path from URL (get userId and filename)
+        const pathParts = videoUrl.split('/');
+        const filePath = pathParts.slice(-2).join('/'); // Gets "userId/filename.mp4"
+        
+        // Reconstruct with S3 path
+        videoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}`;
+        console.log("Fixed video URL with S3 path:", videoUrl);
+      }
+      
+      setDownloadUrl(videoUrl);
       
     } catch (error) {
       alert(`Error: ${error.message}`);
