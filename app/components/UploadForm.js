@@ -59,6 +59,11 @@ export default function UploadForm() {
       alert("Please select a video file.");
       return;
     }
+    if (!user) {
+      alert("Please sign in to upload videos.");
+      return;
+    }
+    
     setUploading(true);
     setDownloadUrl("");
     setProgress(0);
@@ -86,20 +91,31 @@ export default function UploadForm() {
 
       const res = await fetch("/api/upload", {
         method: "POST",
+        headers: {
+          "x-user-id": user.id
+        },
         body: formData,
       });
-
+      
       clearInterval(progressInterval);
-      setProgress(100);
-
-      const data = await res.json();
-      if (res.ok) {
-        setDownloadUrl(data.videoUrl);
-      } else {
-        throw new Error(data.error || "Upload failed");
+      
+      if (!res.ok) {
+        let errorMessage = "Upload failed";
+        try {
+          const errorData = await res.json();
+          errorMessage = errorData.error || errorData.details || errorMessage;
+        } catch (jsonError) {
+          errorMessage = `Server error: ${res.status} ${res.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
+      
+      const data = await res.json();
+      setProgress(100);
+      setDownloadUrl(data.videoUrl);
+      
     } catch (error) {
-      alert(error.message || "An error occurred during upload.");
+      alert(`Error: ${error.message}`);
       console.error(error);
       setProgress(0);
     } finally {
