@@ -175,32 +175,8 @@ export default function UploadForm() {
       // Extract the video URL from the response data
       let videoUrl = data.videoUrl;
 
-      // The conditional logic here could be simplified
-      if (videoUrl) {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        
-        // Extract file path from URL (get userId and filename)
-        const pathParts = videoUrl.split('/');
-        let filePath;
-        
-        // Try to determine the path structure
-        if (videoUrl.includes('/object/public/videos/')) {
-          // Extract path after "/videos/"
-          const videosIndex = videoUrl.indexOf('/videos/');
-          if (videosIndex !== -1) {
-            filePath = videoUrl.substring(videosIndex + 8); // +8 for "/videos/"
-          }
-        } else if (pathParts.length >= 2) {
-          filePath = pathParts.slice(-2).join('/'); // Gets "userId/filename.mp4"
-        }
-        
-        if (filePath) {
-          // Should use "/storage/v1/s3/object/public/" to match your endpoint
-          videoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}?download=true`;
-          console.log("Fixed video URL with download parameter:", videoUrl);
-        }
-      }
-      
+      // No need for complex path extraction or URL modification
+      // Just make sure it has the download parameter for the download link
       setDownloadUrl(videoUrl);
       
     } catch (error) {
@@ -533,9 +509,9 @@ export default function UploadForm() {
                       <p className="text-xs text-white/50 break-all mt-2">{downloadUrl}</p>
                     </div>
                     
-                    {/* View link - add parameter for viewing */}
+                    {/* View link - use download=false */}
                     <a
-                      href={downloadUrl.includes('?') ? downloadUrl : `${downloadUrl}?download=false`}
+                      href={downloadUrl.includes('?') ? downloadUrl.replace('download=true', 'download=false') : `${downloadUrl}?download=false`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"

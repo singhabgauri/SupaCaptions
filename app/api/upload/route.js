@@ -192,22 +192,13 @@ export async function POST(req) {
           });
         }
         
-        // After uploading the file to storage, generate a signed URL
-        const { data: signedUrlData, error: signedUrlError } = await supabase
-          .storage
-          .from('videos')
-          .createSignedUrl(filePath, 60 * 60 * 24); // 24 hours expiry
+        // Replace lines 185-204 with this updated code:
+        // Don't bother with signed URLs, they require authentication
+        // Instead use public URL with download parameter which works with the correct policies
+        let videoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}?download=true`;
+        console.log("Using public URL with download parameter:", videoUrl);
 
-        if (signedUrlError) {
-          console.error("Error generating signed URL:", signedUrlError);
-          // Fall back to public URL
-          videoUrl = `${supabaseUrl}/storage/v1/object/public/videos/${filePath}?download=true`;
-        } else {
-          videoUrl = signedUrlData.signedUrl;
-          console.log("Generated signed URL with 24h expiry:", videoUrl);
-        }
-
-        // Return the signed URL to the client
+        // Return success to the client with the updated URL
         return NextResponse.json({
           message: "Video uploaded successfully",
           videoUrl: videoUrl,
