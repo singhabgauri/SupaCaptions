@@ -485,13 +485,23 @@ export default function UploadForm() {
                     <div>
                       <h3 className="text-lg font-semibold text-emerald-300">Processing Complete!</h3>
                       <p className="text-sm text-emerald-200">Your video is ready to download</p>
+                      {/* Add this to debug the URL */}
+                      <p className="text-xs text-white/50 break-all mt-2">{downloadUrl}</p>
                     </div>
                     <a
                       href={downloadUrl}
-                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
                     >
-                      Download Video
+                      View Video
+                    </a>
+                    <a
+                      href={downloadUrl}
+                      download
+                      className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ml-2"
+                    >
+                      Download
                     </a>
                   </div>
                 </div>

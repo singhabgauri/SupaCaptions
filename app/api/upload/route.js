@@ -92,6 +92,20 @@ export async function POST(req) {
         .from('videos')
         .getPublicUrl(filePath);
 
+      // Log the URL for debugging
+      console.log("Generated public URL:", publicUrlData.publicUrl);
+
+      // Verify the URL is properly formatted
+      if (!publicUrlData.publicUrl.includes('/storage/v1/object/public/videos/')) {
+        console.error("Invalid URL format:", publicUrlData.publicUrl);
+        
+        // Construct the URL manually as a fallback
+        const manualUrl = `${supabaseUrl}/storage/v1/object/public/videos/${filePath}`;
+        console.log("Manually constructed URL:", manualUrl);
+        
+        publicUrlData.publicUrl = manualUrl;
+      }
+
       console.log("Storage steps completed successfully");
       
       try {
