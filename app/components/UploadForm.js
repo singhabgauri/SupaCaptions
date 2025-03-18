@@ -1,7 +1,17 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
+import { createClient } from "@supabase/supabase-js";
+import { v4 as uuidv4 } from "uuid"; // For temporary solution
+
+// Add this near the top of your component
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 export default function UploadForm() {
+  // Add user state
+  const [user, setUser] = useState(null);
   // State declarations
   const [file, setFile] = useState(null);
   const [fontSize, setFontSize] = useState("24");
@@ -45,6 +55,28 @@ export default function UploadForm() {
     };
   }, []);
 
+  // Add this useEffect to check for authentication
+  useEffect(() => {
+    // Check for existing session
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user || null);
+      
+      // Set up auth state change listener
+      const { data: authListener } = supabase.auth.onAuthStateChange(
+        (event, session) => {
+          setUser(session?.user || null);
+        }
+      );
+      
+      return () => {
+        authListener?.subscription?.unsubscribe();
+      };
+    };
+    
+    checkUser();
+  }, []);
+
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
@@ -59,9 +91,16 @@ export default function UploadForm() {
       alert("Please select a video file.");
       return;
     }
+    
+    // If no user is signed in, use a temporary ID or show auth UI
     if (!user) {
+      // Option 1: Show authentication UI
       alert("Please sign in to upload videos.");
       return;
+      
+      // Option 2 (for testing): Generate temporary user ID
+      // const tempUserId = uuidv4();
+      // console.log("Using temporary user ID:", tempUserId);
     }
     
     setUploading(true);
@@ -92,7 +131,8 @@ export default function UploadForm() {
       const res = await fetch("/api/upload", {
         method: "POST",
         headers: {
-          "x-user-id": user.id
+          // Use real user ID if available, or a temporary one for testing
+          "x-user-id": user?.id || "temp-user-id"
         },
         body: formData,
       });
@@ -123,8 +163,51 @@ export default function UploadForm() {
     }
   };
 
+  // Add authentication UI
+  const renderAuthSection = () => {
+    if (user) {
+      return (
+        <div className="mb-4 text-sm text-white/70">
+          Logged in as: <span className="text-violet-300">{user.email}</span>
+          <button 
+            onClick={() => supabase.auth.signOut()}
+            className="ml-4 text-violet-400 hover:text-violet-300 underline"
+          >
+            Sign Out
+          </button>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="mb-6 p-4 bg-violet-900/20 border border-violet-500/20 rounded-lg">
+        <p className="text-sm text-white/70 mb-3">
+          Sign in to upload and access your captioned videos
+        </p>
+        <LoginForm />
+      </div>
+    );
+  };
+
+  // For now, let's add a shortcut for testing:
+  const handleBypassAuth = () => {
+    setUser({ id: "temp-user-" + uuidv4(), email: "test@example.com" });
+  };
+
   return (
     <div className="min-h-screen min-w-screen bg-gradient-to-b from-black via-gray-950 to-black text-white">
+      {/* Add this near the top of your UI for testing */}
+      {!user && (
+        <div className="fixed top-4 right-4 z-50">
+          <button
+            onClick={handleBypassAuth}
+            className="px-4 py-2 bg-red-600/50 text-white text-sm rounded-lg"
+          >
+            Temporary Login (Dev Only)
+          </button>
+        </div>
+      )}
+      
       {/* Main */}
       <main className="pt-24 px-4 pb-24 relative">
         <div className="max-w-7xl mx-auto">
