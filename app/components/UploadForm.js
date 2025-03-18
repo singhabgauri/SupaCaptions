@@ -149,7 +149,7 @@ export default function UploadForm() {
       if (res.status === 207 || data.error) {
         setProgress(100);
         
-        // Fix: Convert URL to S3 format if needed
+        // Fix: Convert URL to S3 format if needed and add download parameter
         let videoUrl = data.videoUrl;
         if (videoUrl && !videoUrl.includes('/storage/v1/s3/')) {
           const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -157,8 +157,8 @@ export default function UploadForm() {
           const pathParts = videoUrl.split('/');
           const filePath = pathParts.slice(-2).join('/'); // Gets "userId/filename.mp4"
           
-          // Reconstruct with S3 path
-          videoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}`;
+          // Reconstruct with S3 path and download parameter
+          videoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}?download=true`;
           console.log("Fixed video URL with S3 path:", videoUrl);
         }
         
@@ -172,17 +172,30 @@ export default function UploadForm() {
       // Full success - still check and fix URL format
       setProgress(100);
       
-      // Fix: Convert URL to S3 format if needed
-      let videoUrl = data.videoUrl;
-      if (videoUrl && !videoUrl.includes('/storage/v1/s3/')) {
+      // The conditional logic here could be simplified
+      if (videoUrl) {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        
         // Extract file path from URL (get userId and filename)
         const pathParts = videoUrl.split('/');
-        const filePath = pathParts.slice(-2).join('/'); // Gets "userId/filename.mp4"
+        let filePath;
         
-        // Reconstruct with S3 path
-        videoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}`;
-        console.log("Fixed video URL with S3 path:", videoUrl);
+        // Try to determine the path structure
+        if (videoUrl.includes('/object/public/videos/')) {
+          // Extract path after "/videos/"
+          const videosIndex = videoUrl.indexOf('/videos/');
+          if (videosIndex !== -1) {
+            filePath = videoUrl.substring(videosIndex + 8); // +8 for "/videos/"
+          }
+        } else if (pathParts.length >= 2) {
+          filePath = pathParts.slice(-2).join('/'); // Gets "userId/filename.mp4"
+        }
+        
+        if (filePath) {
+          // Should use "/storage/v1/s3/object/public/" to match your endpoint
+          videoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}?download=true`;
+          console.log("Fixed video URL with download parameter:", videoUrl);
+        }
       }
       
       setDownloadUrl(videoUrl);
@@ -516,17 +529,21 @@ export default function UploadForm() {
                       {/* Add this to debug the URL */}
                       <p className="text-xs text-white/50 break-all mt-2">{downloadUrl}</p>
                     </div>
+                    
+                    {/* View link - add parameter for viewing */}
                     <a
-                      href={downloadUrl}
+                      href={downloadUrl.includes('?') ? downloadUrl : `${downloadUrl}?download=false`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
                     >
                       View Video
                     </a>
+                    
+                    {/* Download link - ensure download=true parameter */}
                     <a
-                      href={downloadUrl}
-                      download
+                      href={downloadUrl.includes('?') ? downloadUrl : `${downloadUrl}?download=true`}
+                      download={file ? file.name : "video.mp4"}
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ml-2"
                     >
                       Download

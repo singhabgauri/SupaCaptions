@@ -192,11 +192,26 @@ export async function POST(req) {
           });
         }
         
-        // Everything succeeded
+        // After uploading the file to storage, generate a signed URL
+        const { data: signedUrlData, error: signedUrlError } = await supabase
+          .storage
+          .from('videos')
+          .createSignedUrl(filePath, 60 * 60 * 24); // 24 hours expiry
+
+        if (signedUrlError) {
+          console.error("Error generating signed URL:", signedUrlError);
+          // Fall back to public URL
+          videoUrl = `${supabaseUrl}/storage/v1/object/public/videos/${filePath}?download=true`;
+        } else {
+          videoUrl = signedUrlData.signedUrl;
+          console.log("Generated signed URL with 24h expiry:", videoUrl);
+        }
+
+        // Return the signed URL to the client
         return NextResponse.json({
           message: "Video uploaded successfully",
-          videoUrl: publicUrlData.publicUrl,
-          videoId: videoData.id
+          videoUrl: videoUrl,
+          videoId: videoData?.id || 'unknown'
         });
         
       } catch (dbError) {
