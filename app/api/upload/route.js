@@ -4,12 +4,19 @@ import path from "path";
 import { exec } from "child_process";
 import OpenAI from "openai";
 import dotenv from "dotenv";
+import { createClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 
 dotenv.config();
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const uploadDir = path.join(process.cwd(), "public/uploads");
 fs.ensureDirSync(uploadDir);
+
+// Initialize Supabase client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Helper function for executing shell commands
 const execPromise = (command, options = {}) => {
@@ -184,119 +191,107 @@ const getPositionAlignment = (position) => {
 };
 
 export async function POST(req) {
-  const paths = { video: '', audio: '', subtitle: '', output: '' };
-
   try {
-    // Validate request
+    // Get form data
     const formData = await req.formData();
     const file = formData.get("video");
-
-    if (!file || !file.name) {
-      return NextResponse.json({ error: "No video file uploaded" }, { status: 400 });
-    }
-
-    // Get highlight settings from form data
-    const enableHighlight = formData.get("enableHighlight") === "true";
-    const highlightColor = enableHighlight ? (formData.get("highlightColor") || "#00FF00") : "#FFFFFF";
-    const fontColor = formData.get("fontColor") || "#ffffff";
     
-    // Get border settings from form data
+    if (!file) {
+      return NextResponse.json(
+        { error: "No video file uploaded" }, 
+        { status: 400 }
+      );
+    }
+    
+    // Get user ID
+    const userId = req.headers.get("x-user-id");
+    if (!userId) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+    
+    // Store video settings
+    const enableHighlight = formData.get("enableHighlight") === "true";
+    const highlightColor = formData.get("highlightColor") || "#00FF00";
+    const fontColor = formData.get("fontColor") || "#FFFFFF";
     const enableBorder = formData.get("enableBorder") === "true";
     const borderColor = formData.get("borderColor") || "#000000";
     const borderSize = parseInt(formData.get("borderSize") || "2", 10);
-    
-    // Convert colors to ASS format
-    const assHighlightColor = convertHexToAss(highlightColor);
-    const assFontColor = convertHexToAss(fontColor);
-    const assBorderColor = convertHexToAss(borderColor);
-    
-    const animation = enableHighlight ? (formData.get("animation") || "") : "";
+    const animation = formData.get("animation") || "";
     const textCase = formData.get("textCase") || "normal";
     const position = formData.get("position") || "bottom";
     const fontSize = formData.get("fontSize") || "24";
     const fontType = formData.get("fontType") || "Arial";
-
-    // Generate paths
-    Object.assign(paths, generatePaths(file.name));
-    // Change subtitle extension to .ass
-    paths.subtitle = paths.subtitle.replace(/\.srt$/, ".ass");
-
-    // Save uploaded video
-    await fs.writeFile(paths.video, Buffer.from(await file.arrayBuffer()));
-    console.log('Video saved:', paths.video);
-
-    // Extract audio
-    await execPromise(`ffmpeg -i "${paths.video}" -q:a 0 -map a "${paths.audio}"`);
-    console.log('Audio extracted:', paths.audio);
-
-    // Generate subtitles using Whisper AI in SRT format first
-    const transcript = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(paths.audio),
-      model: "whisper-1",
-      response_format: "srt",
+    
+    // Generate unique filename
+    const filename = `${uuidv4()}${path.extname(file.name)}`;
+    const filePath = `${userId}/${filename}`;
+    
+    // Upload video to Supabase Storage
+    const fileBuffer = await file.arrayBuffer();
+    const { data, error } = await supabase
+      .storage
+      .from('videos')
+      .upload(filePath, Buffer.from(fileBuffer), {
+        contentType: 'video/mp4',
+        cacheControl: '3600'
+      });
+      
+    if (error) throw error;
+    
+    // Get public URL
+    const { data: publicUrlData } = supabase
+      .storage
+      .from('videos')
+      .getPublicUrl(filePath);
+    
+    // Store video in database
+    const { data: videoData, error: videoError } = await supabase
+      .from('videos')
+      .insert({
+        title: file.name,
+        video_url: publicUrlData.publicUrl,
+        user_id: userId,
+        status: 'uploaded' // Will be processed separately
+      })
+      .select()
+      .single();
+      
+    if (videoError) throw videoError;
+    
+    // Store caption preferences
+    const { error: captionError } = await supabase
+      .from('captions')
+      .insert({
+        video_id: videoData.id,
+        font_type: fontType,
+        font_size: parseInt(fontSize),
+        font_color: fontColor,
+        text_case: textCase,
+        position: position,
+        enable_highlight: enableHighlight,
+        highlight_color: highlightColor,
+        animation: animation,
+        enable_border: enableBorder,
+        border_color: borderColor,
+        border_size: borderSize
+      });
+      
+    if (captionError) throw captionError;
+    
+    return NextResponse.json({
+      message: "Video uploaded successfully",
+      videoUrl: publicUrlData.publicUrl,
+      videoId: videoData.id
     });
-    // Convert SRT transcript to ASS with animation/highlight options
-    const assContent = convertSrtToAss(
-      transcript,
-      fontType,
-      fontSize,
-      fontColor,
-      enableHighlight,
-      highlightColor,
-      animation,
-      textCase,
-      position,
-      enableBorder,
-      borderColor,
-      borderSize
-    );
-    await fs.writeFile(paths.subtitle, assContent);
-    console.log('Subtitles generated (ASS):', paths.subtitle);
-
-    // Burn subtitles into video with improved command using the ASS file
-    const videoPath = paths.video.replace(/\\/g, '/');
-    const subtitlePath = paths.subtitle.replace(/\\/g, '/').replace(/^([A-Za-z]):\//, '$1\\\\:/'); // Fix for C:\ drive issue
-    const outputPath = paths.output.replace(/\\/g, '/');
-    console.log('outputPath is:', outputPath);
-
-    // Font settings already used in the ASS file; now, execute FFmpeg to burn in the ASS subtitles.
-    const ffmpegCommand = [
-      'ffmpeg',
-      '-i', `"${videoPath}"`,
-      '-vf', `"subtitles=${subtitlePath}:force_style='PrimaryColour=${assHighlightColor},SecondaryColour=${assFontColor}'"`,
-      '-c:v', 'libx264',
-      '-preset', 'medium',
-      '-c:a', 'copy',
-      `"${outputPath}"`
-    ].join(' ');
-
-    console.log('Executing FFmpeg command:', ffmpegCommand);
-
-    try {
-      await execPromise(ffmpegCommand);
-    } catch (ffmpegError) {
-      console.error('FFmpeg error details:', ffmpegError);
-      throw ffmpegError;
-    }
-
-    console.log('Video processing complete:', paths.output);
-
+    
   } catch (error) {
-    console.error("Error processing video:", error);
-    // Cleanup on error
-    await Promise.all(
-      Object.values(paths)
-        .filter(p => p && fs.existsSync(p))
-        .map(p => fs.remove(p))
-    );
+    console.error("Error uploading video:", error);
     return NextResponse.json(
-      { error: "Video processing failed", details: error.message },
+      { error: "Upload failed", details: error.message },
       { status: 500 }
     );
   }
-
-  return NextResponse.json({
-    message: "Processing complete",
-    videoUrl: `/uploads/${path.basename(paths.output)}`
-  });
 }
