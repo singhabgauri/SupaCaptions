@@ -9,60 +9,64 @@ const supabase = createClient(
 
 export async function GET(request) {
   try {
-    // Extract job ID from URL
+    // Extract job ID from URL and validate
     const { searchParams } = new URL(request.url);
     const jobId = searchParams.get('jobId');
     
     if (!jobId) {
-      console.error('Missing job ID in status check request');
       return NextResponse.json({ error: 'Missing job ID' }, { status: 400 });
     }
     
-    console.log(`Checking status for job: ${jobId}`);
-    
-    // Get job status from Supabase
-    const { data: job, error } = await supabase
+    // Get job status from Supabase with error handling
+    let { data: job, error } = await supabase
       .from('processing_jobs')
       .select('*')
       .eq('id', jobId)
       .single();
     
     if (error) {
-      console.error(`Error fetching job ${jobId}:`, error);
-      return NextResponse.json({ error: 'Failed to retrieve job status' }, { status: 500 });
+      // Handle different Supabase error types
+      const errorMessage = error.message || 'Database error';
+      const statusCode = error.code === 'PGRST116' ? 404 : 500;
+      
+      return NextResponse.json({ 
+        error: `Failed to retrieve job status: ${errorMessage}` 
+      }, { status: statusCode });
     }
     
     if (!job) {
-      console.error(`Job not found: ${jobId}`);
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
     
-    // If job is completed, include video URLs
+    // Build response based on job status
+    let response = { status: job.status };
+    
     if (job.status === 'completed') {
-      const { data: { publicUrl } } = supabase.storage
+      // For completed jobs, include URLs
+      const { data } = supabase.storage
         .from('videos')
         .getPublicUrl(job.output_path);
       
-      return NextResponse.json({
-        status: job.status,
-        videoUrl: publicUrl,
-        downloadUrl: `/api/download?path=${job.output_path}`,
+      response = {
+        ...response,
+        videoUrl: data.publicUrl,
+        downloadUrl: `/api/download?path=${encodeURIComponent(job.output_path)}`,
         processingDetails: job.processing_details || {}
-      });
+      };
     } else if (job.status === 'failed') {
-      // If job failed, include error message
-      return NextResponse.json({
-        status: job.status,
-        error: job.error_message || 'Unknown error'
-      });
+      // For failed jobs, include error message
+      response.error = job.error_message || 'Unknown processing error';
     }
     
-    // For other statuses, return the status
-    return NextResponse.json({
-      status: job.status
-    });
+    return NextResponse.json(response);
+    
   } catch (error) {
-    console.error('Error in job status API:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('Unexpected error in job status API:', error);
+    
+    // Return a stable error response
+    return NextResponse.json({ 
+      error: 'Internal server error',
+      details: error.message 
+    }, { status: 500 });
   }
 }

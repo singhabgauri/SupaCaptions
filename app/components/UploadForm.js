@@ -34,6 +34,11 @@ export default function UploadForm() {
   const [currentJobId, setCurrentJobId] = useState(null);
   const [processedVideoUrl, setProcessedVideoUrl] = useState("");
 
+  // Add these refs to track mounted state
+  const isMountedRef = useRef(true);
+  const statusIntervalRef = useRef(null);
+  const safetyTimeoutRef = useRef(null);
+
   // Add this useEffect to inject global styles for select options
   useEffect(() => {
     // Create a style element
@@ -78,6 +83,15 @@ export default function UploadForm() {
     };
     
     checkUser();
+  }, []);
+
+  // Add cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (statusIntervalRef.current) clearInterval(statusIntervalRef.current);
+      if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current);
+    };
   }, []);
 
   const handleFileChange = (e) => {
@@ -140,9 +154,10 @@ export default function UploadForm() {
       setProgress(30); // Video uploaded, processing started
       
       // Start polling for job status with the correct job ID
-      const statusCheckInterval = setInterval(async () => {
-        if (!jobId) {
-          console.error("No job ID available for status check");
+      statusIntervalRef.current = setInterval(async () => {
+        // Only run if component is still mounted
+        if (!isMountedRef.current) {
+          clearInterval(statusIntervalRef.current);
           return;
         }
         
@@ -159,23 +174,28 @@ export default function UploadForm() {
           const statusData = await statusResponse.json();
           console.log("Status check result:", statusData);
           
-          if (statusData.status === 'completed') {
-            // Processing complete, show the video
-            clearInterval(statusCheckInterval);
-            setProgress(100);
-            setProcessedVideoUrl(statusData.videoUrl);
-            setDownloadUrl({
-              view: statusData.videoUrl,
-              download: statusData.downloadUrl
-            });
-            setUploading(false);
-          } else if (statusData.status === 'failed') {
-            // Processing failed
-            clearInterval(statusCheckInterval);
-            throw new Error(statusData.error || 'Processing failed');
-          } else {
-            // Still processing, update progress
-            setProgress(prev => Math.min(prev + 5, 90)); // Increase progress but cap at 90%
+          // Only update state if component is still mounted
+          if (isMountedRef.current) {
+            if (statusData.status === 'completed') {
+              // Processing complete, show the video
+              clearInterval(statusIntervalRef.current);
+              setProgress(100);
+              setProcessedVideoUrl(statusData.videoUrl);
+              setDownloadUrl({
+                view: statusData.videoUrl,
+                download: statusData.downloadUrl
+              });
+              setUploading(false);
+            } else if (statusData.status === 'failed') {
+              // Processing failed
+              clearInterval(statusIntervalRef.current);
+              setUploading(false);
+              setProgress(0);
+              alert(statusData.error || 'Processing failed');
+            } else {
+              // Still processing, update progress
+              setProgress(prev => Math.min(prev + 5, 90)); // Increase progress but cap at 90%
+            }
           }
         } catch (statusError) {
           console.error('Error checking status:', statusError);
@@ -184,19 +204,21 @@ export default function UploadForm() {
       }, 3000); // Check every 3 seconds
       
       // Safety cleanup after 10 minutes (in case something goes wrong)
-      setTimeout(() => {
-        clearInterval(statusCheckInterval);
-        if (setUploading) { // Check if component is still mounted
+      safetyTimeoutRef.current = setTimeout(() => {
+        if (isMountedRef.current) {
+          clearInterval(statusIntervalRef.current);
           setUploading(false);
           setProgress(0);
           alert('Processing timed out. Please try again.');
         }
       }, 10 * 60 * 1000);
     } catch (error) {
-      alert(`Error: ${error.message}`);
-      console.error(error);
-      setProgress(0);
-      setUploading(false);
+      if (isMountedRef.current) {
+        alert(`Error: ${error.message}`);
+        console.error(error);
+        setProgress(0);
+        setUploading(false);
+      }
     }
   };
 

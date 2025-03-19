@@ -9,37 +9,48 @@ const supabase = createClient(
 
 export async function GET(request) {
   try {
-    // Get the path from the query parameters
+    // Extract path from URL and validate
     const { searchParams } = new URL(request.url);
     const path = searchParams.get('path');
     
     if (!path) {
-      return NextResponse.json({ error: 'No file path provided' }, { status: 400 });
+      return NextResponse.json({ error: 'File path is required' }, { status: 400 });
     }
     
-    // Download the file directly
+    console.log('Downloading file from path:', path);
+    
+    // Try to download the file
     const { data, error } = await supabase.storage
       .from('videos')
       .download(path);
     
     if (error) {
-      return NextResponse.json({ error: 'Failed to download file' }, { status: 500 });
+      console.error('Supabase download error:', error);
+      return NextResponse.json({ 
+        error: 'Failed to download file',
+        details: error.message 
+      }, { status: 500 });
+    }
+    
+    if (!data) {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
     
     // Extract filename from path
     const filename = path.split('/').pop() || 'download.mp4';
     
-    // Return the file with proper headers for download
+    // Return the file with proper headers
     return new NextResponse(data, {
       status: 200,
       headers: {
         'Content-Type': 'video/mp4',
         'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+        'Cache-Control': 'no-cache',
         'X-Content-Type-Options': 'nosniff'
       },
     });
   } catch (error) {
+    console.error('Download API error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
