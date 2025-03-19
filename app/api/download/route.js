@@ -35,6 +35,8 @@ export async function GET(request) {
       headers: {
         'Content-Type': 'video/mp4',
         'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+        'X-Content-Type-Options': 'nosniff'
       },
     });
   } catch (error) {

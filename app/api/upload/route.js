@@ -121,13 +121,19 @@ export async function POST(request) {
     // 6. Handle Cloud Run response
     if (!gcResponse.ok) {
       const errorText = await gcResponse.text();
-      let errorMessage;
+      let errorMessage = errorText;
       
-      try {
-        errorMessage = JSON.parse(errorText);
-        errorMessage = JSON.stringify(errorMessage);
-      } catch {
-        errorMessage = errorText;
+      console.error(`Cloud Run error response (${gcResponse.status}):`, errorText);
+      
+      // Try to parse as JSON only if it looks like JSON
+      if (errorText.trim().startsWith('{') || errorText.trim().startsWith('[')) {
+        try {
+          const errorObj = JSON.parse(errorText);
+          errorMessage = errorObj.error || errorObj.details || JSON.stringify(errorObj);
+        } catch (jsonError) {
+          console.error('Error parsing Cloud Run error response as JSON:', jsonError);
+          // Keep the original text as errorMessage
+        }
       }
       
       // Update job status
@@ -142,7 +148,22 @@ export async function POST(request) {
       );
     }
     
-    const gcData = await gcResponse.json();
+    // For parsing success responses too
+    let gcData = {};
+    try {
+      const responseText = await gcResponse.text();
+      
+      if (responseText.trim()) {
+        try {
+          gcData = JSON.parse(responseText);
+        } catch (jsonError) {
+          console.error('Error parsing Cloud Run success response as JSON:', jsonError);
+          console.log('Raw response:', responseText);
+        }
+      }
+    } catch (readError) {
+      console.error('Error reading Cloud Run response:', readError);
+    }
     
     // 7. Get URLs for the processed video
     const { data: { publicUrl } } = supabase.storage
