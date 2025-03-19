@@ -181,9 +181,11 @@ export default function UploadForm() {
               clearInterval(statusIntervalRef.current);
               setProgress(100);
               setProcessedVideoUrl(statusData.videoUrl);
+              
+              // Use the direct-download API for more reliability
               setDownloadUrl({
                 view: statusData.videoUrl,
-                download: statusData.downloadUrl
+                download: `/api/direct-download?path=${encodeURIComponent(statusData.downloadPath || '')}`
               });
               setUploading(false);
             } else if (statusData.status === 'failed') {
@@ -225,6 +227,16 @@ export default function UploadForm() {
   // For now, let's add a shortcut for testing:
   const handleBypassAuth = () => {
     setUser({ id: "temp-user-" + uuidv4(), email: "test@example.com" });
+  };
+
+  const handleDownload = (url) => {
+    // Create a temporary anchor element
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', ''); // This triggers download instead of navigation
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -552,15 +564,12 @@ export default function UploadForm() {
                     </a>
                     
                     {/* Download button - with click handler to force download */}
-                    <a
-                      href={typeof downloadUrl === 'object' ? downloadUrl.download : downloadUrl}
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      download
+                    <button 
+                      onClick={() => handleDownload(downloadUrl.view)}
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ml-2"
                     >
                       Download
-                    </a>
+                    </button>
                   </div>
                 </div>
               </section>

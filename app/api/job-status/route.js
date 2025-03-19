@@ -43,14 +43,15 @@ export async function GET(request) {
     
     if (job.status === 'completed') {
       // For completed jobs, include URLs
-      const { data } = supabase.storage
+      const { data: { publicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(job.output_path);
       
       response = {
         ...response,
-        videoUrl: data.publicUrl,
+        videoUrl: publicUrl,
         downloadUrl: `/api/download?path=${encodeURIComponent(job.output_path)}`,
+        downloadPath: job.output_path, // Add this!
         processingDetails: job.processing_details || {}
       };
     } else if (job.status === 'failed') {

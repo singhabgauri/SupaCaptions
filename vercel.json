@@ -1,0 +1,21 @@
+{
+  "functions": {
+    "app/api/**/*.js": {
+      "maxDuration": 60
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/download",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "experimental": {
+    "largeFiles": true
+  }
+}
