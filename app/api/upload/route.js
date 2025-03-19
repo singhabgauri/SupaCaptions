@@ -179,10 +179,11 @@ export async function POST(request) {
     // 8. Return final result
     console.log(`Returning response with job ID: ${jobId}`);
     return NextResponse.json({
-      jobId, // This is critical!
-      status: 'processing',
-      originalVideoUrl: publicUrl,
-      message: 'Video uploaded and processing started. Check status endpoint for updates.'
+      status: 'completed',
+      videoUrl: publicUrl, // For viewing
+      downloadUrl: `/api/direct-download?path=${encodeURIComponent(processedPath)}`, // For downloading
+      downloadPath: processedPath,
+      processingDetails: gcData?.processingDetails || {}
     });
     
   } catch (error) {

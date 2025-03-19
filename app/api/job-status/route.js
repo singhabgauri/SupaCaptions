@@ -42,20 +42,20 @@ export async function GET(request) {
     let response = { status: job.status };
     
     if (job.status === 'completed') {
-      // For completed jobs, include URLs
+      // Get public URL for viewing
       const { data: { publicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(job.output_path);
       
-      // Get a download-friendly URL
-      const { data: signedUrlData } = await supabase.storage
-        .from('videos')
-        .createSignedUrl(job.output_path, 3600);
-        
       response = {
         ...response,
+        // URL for viewing in browser
         videoUrl: publicUrl,
-        downloadUrl: signedUrlData?.signedURL || publicUrl,
+        
+        // URL for downloading - this goes through our API that forces download
+        downloadUrl: `/api/direct-download?path=${encodeURIComponent(job.output_path)}`,
+        
+        // Raw path for any other operations
         downloadPath: job.output_path,
         processingDetails: job.processing_details || {}
       };

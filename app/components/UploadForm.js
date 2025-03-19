@@ -563,20 +563,19 @@ export default function UploadForm() {
                       <p className="text-sm text-emerald-200">Your video is ready to download</p>
                     </div>
                     
-                    {/* View button - use view URL */}
+                    {/* View button - opens in new tab */}
                     <a
                       href={typeof downloadUrl === 'object' ? downloadUrl.view : downloadUrl}
-                      target="_blank"
+                      target="_blank" 
                       rel="noopener noreferrer"
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
                     >
                       View Video
                     </a>
                     
-                    {/* Download button - with improved click handler */}
+                    {/* Download button - triggers download */}
                     <a 
                       href={typeof downloadUrl === 'object' ? downloadUrl.download : downloadUrl}
-                      download="supacaption-video.mp4"
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ml-2"
                     >
                       Download
