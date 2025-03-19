@@ -94,13 +94,8 @@ export default function UploadForm() {
     
     // If no user is signed in, use a temporary ID or show auth UI
     if (!user) {
-      // Option 1: Show authentication UI
       alert("Please sign in to upload videos.");
       return;
-      
-      // Option 2 (for testing): Generate temporary user ID
-      // const tempUserId = uuidv4();
-      // console.log("Using temporary user ID:", tempUserId);
     }
     
     setUploading(true);
@@ -124,6 +119,7 @@ export default function UploadForm() {
     formData.append("borderSize", borderSize.toString());
 
     try {
+      // Show progress while waiting for the upload and processing
       const progressInterval = setInterval(() => {
         setProgress((prev) => Math.min(prev + 5, 90));
       }, 500);
@@ -131,7 +127,6 @@ export default function UploadForm() {
       const res = await fetch("/api/upload", {
         method: "POST",
         headers: {
-          // Use real user ID if available, or a temporary one for testing
           "x-user-id": user?.id || "temp-user-id"
         },
         body: formData,
@@ -146,38 +141,27 @@ export default function UploadForm() {
       }
       
       // Handle partial success
-      if (res.status === 207 || data.error) {
-        setProgress(100);
-        
-        // Fix: Convert URL to S3 format if needed and add download parameter
-        let videoUrl = data.videoUrl;
-        if (videoUrl && !videoUrl.includes('/storage/v1/s3/')) {
-          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-          // Extract file path from URL (get userId and filename)
-          const pathParts = videoUrl.split('/');
-          const filePath = pathParts.slice(-2).join('/'); // Gets "userId/filename.mp4"
-          
-          // Reconstruct with S3 path and download parameter
-          videoUrl = `${supabaseUrl}/storage/v1/s3/object/public/videos/${filePath}?download=true`;
-          console.log("Fixed video URL with S3 path:", videoUrl);
-        }
-        
-        setDownloadUrl(videoUrl);
+      if (res.status === 207 && data.error) {
         console.warn("Partial success:", data.error);
         // Show a warning to the user
         alert(`Video uploaded but some operations failed: ${data.error}`);
-        return;
       }
       
-      // Full success - still check and fix URL format
       setProgress(100);
-
-      // Extract the video URL from the response data
-      let videoUrl = data.videoUrl;
-
-      // No need for complex path extraction or URL modification
-      // Just make sure it has the download parameter for the download link
-      setDownloadUrl(videoUrl);
+      
+      // Set all URLs properly from the response - this is the only place we process the response
+      if (typeof data.videoUrl === 'string') {
+        // Handle both object and string formats from the API
+        if (data.downloadUrl || data.apiDownloadUrl) {
+          setDownloadUrl({
+            view: data.videoUrl,            // For viewing (no download)
+            download: data.downloadUrl,     // For downloading (signed)
+            api: data.apiDownloadUrl        // API fallback
+          });
+        } else {
+          setDownloadUrl(data.videoUrl);
+        }
+      }
       
     } catch (error) {
       alert(`Error: ${error.message}`);
@@ -185,24 +169,6 @@ export default function UploadForm() {
       setProgress(0);
     } finally {
       setUploading(false);
-    }
-
-    try {
-      // Process response
-      if (res.ok || res.status === 207) {
-        const data = await res.json();
-        
-        // Store all URLs
-        setDownloadUrl({
-          view: data.videoUrl,             // For viewing (no download)
-          download: data.downloadUrl,      // For downloading (signed)
-          api: data.apiDownloadUrl         // API fallback
-        });
-        
-        setProgress(100);
-      }
-    } catch (error) {
-      // Your error handling
     }
   };
 
@@ -536,26 +502,15 @@ export default function UploadForm() {
                     </a>
                     
                     {/* Download button - with click handler to force download */}
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        const urlToUse = typeof downloadUrl === 'object' 
-                          ? (downloadUrl.download || downloadUrl.api) 
-                          : downloadUrl;
-                        
-                        // Create an invisible anchor and trigger the download
-                        const link = document.createElement('a');
-                        link.href = urlToUse;
-                        link.setAttribute('download', file ? file.name : 'video.mp4');
-                        link.setAttribute('target', '_blank');
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                      }}
+                    <a
+                      href={typeof downloadUrl === 'object' ? downloadUrl.download : downloadUrl}
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      download
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ml-2"
                     >
                       Download
-                    </button>
+                    </a>
                   </div>
                 </div>
               </section>

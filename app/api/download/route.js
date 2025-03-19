@@ -1,44 +1,47 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-export async function GET(req) {
+// Initialize Supabase client with service key
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
+
+export async function GET(request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('userId');
-    const filename = searchParams.get('filename');
+    // Get the path from the query parameters
+    const { searchParams } = new URL(request.url);
+    const path = searchParams.get('path');
     
-    if (!userId || !filename) {
-      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
+    if (!path) {
+      return NextResponse.json({ error: 'No file path provided' }, { status: 400 });
     }
     
-    const filePath = `${userId}/${filename}`;
-    console.log("API download requested for:", filePath);
+    console.log('Downloading file from path:', path);
     
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-    
-    // Download the file from storage
-    const { data, error } = await supabase
-      .storage
+    // Get the file data directly
+    const { data, error } = await supabase.storage
       .from('videos')
-      .download(filePath);
-      
+      .download(path);
+    
     if (error) {
-      console.error("Storage download error:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('Error downloading file:', error);
+      return NextResponse.json({ error: 'Failed to download file' }, { status: 500 });
     }
     
-    // Return the file as a downloadable attachment
+    // Extract filename from path
+    const filename = path.split('/').pop() || 'download.mp4';
+    
+    // Return the file as an attachment for direct download
     return new NextResponse(data, {
+      status: 200,
       headers: {
         'Content-Type': 'video/mp4',
         'Content-Disposition': `attachment; filename="${filename}"`,
-        'Cache-Control': 'max-age=3600'
-      }
+      },
     });
   } catch (error) {
-    console.error("Download API error:", error);
+    console.error('Download error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
