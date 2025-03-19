@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 export default function DownloadModal({ show, onClose, downloadUrl }) {
   if (!show) return null;
@@ -17,7 +17,7 @@ export default function DownloadModal({ show, onClose, downloadUrl }) {
           <div className="p-4 bg-white/5 rounded-lg">
             <h4 className="font-medium text-white mb-2">Option 1: Right-click and Save</h4>
             <p className="text-sm text-white/70 mb-3">
-              Right-click the button below and select "Save link as..."
+              Right-click the button below and select &ldquo;Save link as...&rdquo;
             </p>
             <a 
               href={downloadUrl}
