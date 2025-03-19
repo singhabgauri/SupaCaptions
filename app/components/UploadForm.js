@@ -30,6 +30,9 @@ export default function UploadForm() {
   const [borderColor, setBorderColor] = useState("#000000");
   const [borderSize, setBorderSize] = useState(2);
   const fileInputRef = useRef(null);
+  // Add a state variable for job ID
+  const [currentJobId, setCurrentJobId] = useState(null);
+  const [processedVideoUrl, setProcessedVideoUrl] = useState("");
 
   // Add this useEffect to inject global styles for select options
   useEffect(() => {
@@ -85,89 +88,114 @@ export default function UploadForm() {
     }
   };
 
+  // After submitting the form:
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!file) {
-      alert("Please select a video file.");
-      return;
-    }
-    
-    // If no user is signed in, use a temporary ID or show auth UI
-    if (!user) {
-      alert("Please sign in to upload videos.");
-      return;
-    }
-    
     setUploading(true);
-    setDownloadUrl("");
-    setProgress(0);
-
-    const formData = new FormData();
-    formData.append("video", file);
-    formData.append("fontSize", fontSize);
-    formData.append("fontColor", fontColor);
-    formData.append("fontType", fontType);
-    formData.append("textCase", textCase);
-    formData.append("position", position);
-    formData.append("enableHighlight", enableHighlight.toString());
-    if (enableHighlight) {
-      formData.append("highlightColor", highlightColor);
-      formData.append("animation", animation);
-    }
-    formData.append("enableBorder", enableBorder.toString());
-    formData.append("borderColor", borderColor);
-    formData.append("borderSize", borderSize.toString());
-
+    setProgress(10); // Show initial progress
+    
     try {
-      // Show progress while waiting for the upload and processing
-      const progressInterval = setInterval(() => {
-        setProgress((prev) => Math.min(prev + 5, 90));
-      }, 500);
-
-      const res = await fetch("/api/upload", {
-        method: "POST",
+      // Upload the video
+      const formData = new FormData();
+      formData.append("video", file);
+      formData.append("fontSize", fontSize);
+      formData.append("fontColor", fontColor);
+      formData.append("fontType", fontType);
+      formData.append("textCase", textCase);
+      formData.append("position", position);
+      formData.append("enableHighlight", enableHighlight.toString());
+      if (enableHighlight) {
+        formData.append("highlightColor", highlightColor);
+        formData.append("animation", animation);
+      }
+      formData.append("enableBorder", enableBorder.toString());
+      formData.append("borderColor", borderColor);
+      formData.append("borderSize", borderSize.toString());
+      
+      console.log("Sending upload request...");
+      const response = await fetch('/api/upload', {
+        method: 'POST',
         headers: {
-          "x-user-id": user?.id || "temp-user-id"
+          'x-user-id': user?.id || 'anonymous'
         },
-        body: formData,
+        body: formData
       });
       
-      clearInterval(progressInterval);
+      const data = await response.json();
+      console.log("Received upload response:", data);
       
-      const data = await res.json();
-      
-      if (!res.ok && res.status !== 207) { // 207 is partial success
-        throw new Error(data.error || data.details || "Upload failed");
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to upload video');
       }
       
-      // Handle partial success
-      if (res.status === 207 && data.error) {
-        console.warn("Partial success:", data.error);
-        // Show a warning to the user
-        alert(`Video uploaded but some operations failed: ${data.error}`);
+      // Check if jobId exists in the response
+      if (!data.jobId) {
+        throw new Error("No job ID returned from server");
       }
       
-      setProgress(100);
+      // Save the job ID
+      const jobId = data.jobId;
+      setCurrentJobId(jobId);
+      console.log("Job ID received:", jobId);
+      setProgress(30); // Video uploaded, processing started
       
-      // Set all URLs properly from the response - this is the only place we process the response
-      if (typeof data.videoUrl === 'string') {
-        // Handle both object and string formats from the API
-        if (data.downloadUrl || data.apiDownloadUrl) {
-          setDownloadUrl({
-            view: data.videoUrl,            // For viewing (no download)
-            download: data.downloadUrl,     // For downloading (signed)
-            api: data.apiDownloadUrl        // API fallback
-          });
-        } else {
-          setDownloadUrl(data.videoUrl);
+      // Start polling for job status with the correct job ID
+      const statusCheckInterval = setInterval(async () => {
+        if (!jobId) {
+          console.error("No job ID available for status check");
+          return;
         }
-      }
+        
+        try {
+          console.log(`Checking job status for ${jobId}...`);
+          const statusResponse = await fetch(`/api/job-status?jobId=${jobId}`);
+          
+          if (!statusResponse.ok) {
+            const errorData = await statusResponse.json();
+            console.error("Status check error:", errorData);
+            return;
+          }
+          
+          const statusData = await statusResponse.json();
+          console.log("Status check result:", statusData);
+          
+          if (statusData.status === 'completed') {
+            // Processing complete, show the video
+            clearInterval(statusCheckInterval);
+            setProgress(100);
+            setProcessedVideoUrl(statusData.videoUrl);
+            setDownloadUrl({
+              view: statusData.videoUrl,
+              download: statusData.downloadUrl
+            });
+            setUploading(false);
+          } else if (statusData.status === 'failed') {
+            // Processing failed
+            clearInterval(statusCheckInterval);
+            throw new Error(statusData.error || 'Processing failed');
+          } else {
+            // Still processing, update progress
+            setProgress(prev => Math.min(prev + 5, 90)); // Increase progress but cap at 90%
+          }
+        } catch (statusError) {
+          console.error('Error checking status:', statusError);
+          // Don't clear interval, keep trying
+        }
+      }, 3000); // Check every 3 seconds
       
+      // Safety cleanup after 10 minutes (in case something goes wrong)
+      setTimeout(() => {
+        clearInterval(statusCheckInterval);
+        if (setUploading) { // Check if component is still mounted
+          setUploading(false);
+          setProgress(0);
+          alert('Processing timed out. Please try again.');
+        }
+      }, 10 * 60 * 1000);
     } catch (error) {
       alert(`Error: ${error.message}`);
       console.error(error);
       setProgress(0);
-    } finally {
       setUploading(false);
     }
   };

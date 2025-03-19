@@ -11,6 +11,7 @@ const GOOGLE_CLOUD_SERVICE_URL = process.env.GOOGLE_CLOUD_FFMPEG_SERVICE_URL;
 
 export async function POST(request) {
   try {
+    console.log('Starting upload process...');
     // 1. Initial validation and setup
     if (!GOOGLE_CLOUD_SERVICE_URL) {
       throw new Error('GOOGLE_CLOUD_FFMPEG_SERVICE_URL environment variable is not set');
@@ -29,13 +30,9 @@ export async function POST(request) {
     const filePath = `${userId}/${filename}`;
     const processedPath = `${userId}/processed-${filename}`;
     
-    const { error: uploadError } = await supabase.storage
-      .from('videos')
-      .upload(filePath, video);
-      
-    if (uploadError) {
-      return NextResponse.json({ error: `Upload error: ${uploadError.message}` }, { status: 500 });
-    }
+    // Create a unique job ID for tracking
+    const jobId = `job-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+    console.log(`Generated job ID: ${jobId}`);
     
     // 3. Prepare caption configuration
     const captionConfig = {
@@ -51,6 +48,40 @@ export async function POST(request) {
       borderColor: formData.get('borderColor'),
       borderSize: formData.get('borderSize')
     };
+    
+    // Store job metadata in Supabase
+    const { error: metadataError } = await supabase
+      .from('processing_jobs')
+      .insert([
+        { 
+          id: jobId,
+          user_id: userId,
+          status: 'uploading',
+          input_path: filePath,
+          output_path: processedPath,
+          caption_config: captionConfig
+        }
+      ]);
+      
+    if (metadataError) {
+      console.error('Failed to create job record:', metadataError);
+      // Continue anyway, not critical
+    }
+    
+    // Upload the video
+    const { error: uploadError } = await supabase.storage
+      .from('videos')
+      .upload(filePath, video);
+      
+    if (uploadError) {
+      // Update job status
+      await supabase
+        .from('processing_jobs')
+        .update({ status: 'failed', error_message: uploadError.message })
+        .eq('id', jobId);
+        
+      return NextResponse.json({ error: `Upload error: ${uploadError.message}` }, { status: 500 });
+    }
     
     // 4. Get a URL for the uploaded video
     const { data: signedUrlData, error: signedUrlError } = await supabase.storage
@@ -99,6 +130,12 @@ export async function POST(request) {
         errorMessage = errorText;
       }
       
+      // Update job status
+      await supabase
+        .from('processing_jobs')
+        .update({ status: 'failed', error_message: errorMessage })
+        .eq('id', jobId);
+      
       return NextResponse.json(
         { error: `Video processing failed: ${errorMessage}` }, 
         { status: 500 }
@@ -112,11 +149,19 @@ export async function POST(request) {
       .from('videos')
       .getPublicUrl(processedPath);
     
+    // Update job status
+    await supabase
+      .from('processing_jobs')
+      .update({ status: 'completed' })
+      .eq('id', jobId);
+    
     // 8. Return final result
+    console.log(`Returning response with job ID: ${jobId}`);
     return NextResponse.json({
-      videoUrl: publicUrl,
-      downloadUrl: `/api/download?path=${processedPath}`,
-      processingDetails: gcData?.processingDetails || { captionsApplied: true }
+      jobId, // This is critical!
+      status: 'processing',
+      originalVideoUrl: publicUrl,
+      message: 'Video uploaded and processing started. Check status endpoint for updates.'
     });
     
   } catch (error) {
