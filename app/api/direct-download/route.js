@@ -1,35 +1,43 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+
+export const maxDuration = 10;
+
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const url = searchParams.get('url');
+    const path = searchParams.get('path');
     
-    if (!url) {
-      return NextResponse.json({ error: 'No URL provided' }, { status: 400 });
+    if (!path) {
+      return NextResponse.json({ error: 'File path is required' }, { status: 400 });
     }
     
-    console.log('Proxying download for:', url);
+    // Get the signed URL with download disposition
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+      .from('videos')
+      .createSignedUrl(path, 3600, {
+        download: true,  // This sets Content-Disposition: attachment
+      });
     
-    // Fetch the video
-    const response = await fetch(url);
-    const buffer = await response.arrayBuffer();
+    if (signedUrlError || !signedUrlData?.signedURL) {
+      // Fall back to public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(path);
+        
+      return NextResponse.redirect(publicUrl);
+    }
     
-    // Get filename from URL
-    const filename = url.split('/').pop() || 'download.mp4';
-    
-    // Return the file with download headers
-    return new NextResponse(buffer, {
-      status: 200,
-      headers: {
-        'Content-Type': 'video/mp4',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Cache-Control': 'no-cache',
-        'Content-Length': buffer.byteLength.toString()
-      },
-    });
+    // Redirect to the signed URL with download disposition
+    return NextResponse.redirect(signedUrlData.signedURL);
   } catch (error) {
-    console.error('Download proxy error:', error);
+    console.error('Direct download error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

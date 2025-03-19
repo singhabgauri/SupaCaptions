@@ -47,11 +47,15 @@ export async function GET(request) {
         .from('videos')
         .getPublicUrl(job.output_path);
       
+      // Get a download-friendly URL
+      const { data: signedUrlData } = await supabase.storage
+        .from('videos')
+        .createSignedUrl(job.output_path, 3600);
+        
       response = {
         ...response,
         videoUrl: publicUrl,
-        // Add this better download URL that uses our proxy
-        downloadUrl: `/api/direct-download?url=${encodeURIComponent(publicUrl)}`,
+        downloadUrl: signedUrlData?.signedURL || publicUrl,
         downloadPath: job.output_path,
         processingDetails: job.processing_details || {}
       };

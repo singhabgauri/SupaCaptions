@@ -2,7 +2,6 @@
 import { useState, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { v4 as uuidv4 } from "uuid"; // For temporary solution
-import DownloadModal from './DownloadModal';
 
 // Add this near the top of your component
 const supabase = createClient(
@@ -34,7 +33,6 @@ export default function UploadForm() {
   // Add a state variable for job ID
   const [currentJobId, setCurrentJobId] = useState(null);
   const [processedVideoUrl, setProcessedVideoUrl] = useState("");
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   // Add these refs to track mounted state
   const isMountedRef = useRef(true);
@@ -231,26 +229,24 @@ export default function UploadForm() {
     setUser({ id: "temp-user-" + uuidv4(), email: "test@example.com" });
   };
 
-  // Replace your current handleDownload function with this:
+  // Replace your current handleDownload function with this simpler version
   const handleDownload = (url) => {
     if (!url) {
       console.error("No URL provided for download");
       return;
     }
     
-    // Try the direct download first
+    // Use the download URL if available, otherwise fall back to view URL
+    const downloadLink = typeof downloadUrl === 'object' ? downloadUrl.download : url;
+    console.log("Starting download:", downloadLink);
+    
+    // Create a temporary anchor element for download
     const link = document.createElement('a');
-    link.href = typeof downloadUrl === 'object' ? downloadUrl.download : url;
+    link.href = downloadLink;
     link.setAttribute('download', `supacaption-video-${Date.now()}.mp4`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
-    // Show the modal as a fallback after a short delay
-    // This gives browsers time to start the download if they will
-    setTimeout(() => {
-      setShowDownloadModal(true);
-    }, 1500);
   };
 
   return (
@@ -578,12 +574,13 @@ export default function UploadForm() {
                     </a>
                     
                     {/* Download button - with improved click handler */}
-                    <button 
-                      onClick={() => handleDownload(typeof downloadUrl === 'object' ? downloadUrl.view : downloadUrl)}
+                    <a 
+                      href={typeof downloadUrl === 'object' ? downloadUrl.download : downloadUrl}
+                      download="supacaption-video.mp4"
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ml-2"
                     >
                       Download
-                    </button>
+                    </a>
                   </div>
                 </div>
               </section>
@@ -598,13 +595,6 @@ export default function UploadForm() {
           <p className="text-sm text-white/50">© 2025 SupaCaptions. All rights reserved.</p>
         </div>
       </footer>
-
-      {/* Add the download modal */}
-      <DownloadModal
-        show={showDownloadModal}
-        onClose={() => setShowDownloadModal(false)}
-        downloadUrl={typeof downloadUrl === 'object' ? downloadUrl.view : downloadUrl}
-      />
     </div>
   );
 }
