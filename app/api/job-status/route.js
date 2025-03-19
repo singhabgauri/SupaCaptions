@@ -50,8 +50,9 @@ export async function GET(request) {
       response = {
         ...response,
         videoUrl: publicUrl,
-        downloadUrl: `/api/download?path=${encodeURIComponent(job.output_path)}`,
-        downloadPath: job.output_path, // Add this!
+        // Add this better download URL that uses our proxy
+        downloadUrl: `/api/direct-download?url=${encodeURIComponent(publicUrl)}`,
+        downloadPath: job.output_path,
         processingDetails: job.processing_details || {}
       };
     } else if (job.status === 'failed') {
