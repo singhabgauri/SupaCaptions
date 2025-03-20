@@ -102,31 +102,51 @@ export default function UploadForm() {
     }
   };
 
-  // After submitting the form:
+  // In the handleUpload function:
   const handleUpload = async (e) => {
     e.preventDefault();
     setUploading(true);
-    setProgress(10); // Show initial progress
+    setProgress(10);
     
     try {
-      // Upload the video
+      // Prepare form data
       const formData = new FormData();
-      formData.append("video", file);
-      formData.append("fontSize", fontSize);
-      formData.append("fontColor", fontColor);
-      formData.append("fontType", fontType);
-      formData.append("textCase", textCase);
-      formData.append("position", position);
-      formData.append("enableHighlight", enableHighlight.toString());
-      if (enableHighlight) {
-        formData.append("highlightColor", highlightColor);
-        formData.append("animation", animation);
-      }
-      formData.append("enableBorder", enableBorder.toString());
-      formData.append("borderColor", borderColor);
-      formData.append("borderSize", borderSize.toString());
+      formData.append('video', file);
       
-      console.log("Sending upload request...");
+      // Add your caption configuration
+      Object.entries({
+        fontSize,
+        fontColor,
+        fontType,
+        textCase,
+        position,
+        enableHighlight,
+        highlightColor,
+        animation,
+        enableBorder,
+        borderColor,
+        borderSize
+      }).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
+
+      // In your handleUpload function, add before the fetch call:
+      console.log('Sending upload request with form data:', {
+        video: file.name,
+        fontSize,
+        fontColor,
+        fontType,
+        textCase,
+        position,
+        enableHighlight,
+        highlightColor,
+        animation,
+        enableBorder,
+        borderColor,
+        borderSize
+      });
+      
+      // Send the upload request
       const response = await fetch('/api/upload', {
         method: 'POST',
         headers: {
@@ -136,76 +156,71 @@ export default function UploadForm() {
       });
       
       const data = await response.json();
-      console.log("Received upload response:", data);
+      console.log('Response from upload API:', data);
       
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to upload video');
+      // Check for immediate completion first
+      if (data.status === 'completed') {
+        setProgress(100);
+        setProcessedVideoUrl(data.videoUrl);
+        setDownloadUrl({
+          view: data.videoUrl,
+          download: data.downloadUrl
+        });
+        setUploading(false);
+        return;
       }
       
-      // Check if jobId exists in the response
+      // If we make it here, the job is in progress and we need to poll
+      setProgress(30);
+      
+      // Start polling for status if we have a job ID
       if (!data.jobId) {
-        throw new Error("No job ID returned from server");
+        console.error('No job ID returned from server:', data);
+        throw new Error('Server did not return a job ID');
       }
       
-      // Save the job ID
       const jobId = data.jobId;
-      setCurrentJobId(jobId);
-      console.log("Job ID received:", jobId);
-      setProgress(30); // Video uploaded, processing started
       
-      // Start polling for job status with the correct job ID
+      // Start polling for job status
       statusIntervalRef.current = setInterval(async () => {
-        // Only run if component is still mounted
-        if (!isMountedRef.current) {
-          clearInterval(statusIntervalRef.current);
-          return;
-        }
-        
         try {
-          console.log(`Checking job status for ${jobId}...`);
           const statusResponse = await fetch(`/api/job-status?jobId=${jobId}`);
           
           if (!statusResponse.ok) {
-            const errorData = await statusResponse.json();
-            console.error("Status check error:", errorData);
+            console.error(`Status check failed: ${statusResponse.status}`);
             return;
           }
           
           const statusData = await statusResponse.json();
-          console.log("Status check result:", statusData);
+          console.log(`Job ${jobId} status:`, statusData);
           
-          // Only update state if component is still mounted
-          if (isMountedRef.current) {
-            if (statusData.status === 'completed') {
-              // Processing complete, show the video
-              clearInterval(statusIntervalRef.current);
-              setProgress(100);
-              setProcessedVideoUrl(statusData.videoUrl);
-              
-              // Use the direct-download API for more reliability
-              setDownloadUrl({
-                view: statusData.videoUrl,
-                download: `/api/direct-download?path=${encodeURIComponent(statusData.downloadPath || '')}`
-              });
-              setUploading(false);
-            } else if (statusData.status === 'failed') {
-              // Processing failed
-              clearInterval(statusIntervalRef.current);
-              setUploading(false);
-              setProgress(0);
-              alert(statusData.error || 'Processing failed');
-            } else {
-              // Still processing, update progress
-              setProgress(prev => Math.min(prev + 5, 90)); // Increase progress but cap at 90%
-            }
+          // Only update if component still mounted
+          if (!isMountedRef.current) return;
+          
+          if (statusData.status === 'completed') {
+            clearInterval(statusIntervalRef.current);
+            setProgress(100);
+            setProcessedVideoUrl(statusData.videoUrl);
+            setDownloadUrl({
+              view: statusData.videoUrl,
+              download: statusData.downloadUrl
+            });
+            setUploading(false);
+          } else if (statusData.status === 'failed') {
+            clearInterval(statusIntervalRef.current);
+            setUploading(false);
+            setProgress(0);
+            alert(statusData.error || 'Processing failed');
+          } else {
+            // Still processing
+            setProgress(prev => Math.min(prev + 5, 90));
           }
         } catch (statusError) {
           console.error('Error checking status:', statusError);
-          // Don't clear interval, keep trying
         }
-      }, 3000); // Check every 3 seconds
+      }, 3000);
       
-      // Safety cleanup after 10 minutes (in case something goes wrong)
+      // Safety cleanup after 10 minutes
       safetyTimeoutRef.current = setTimeout(() => {
         if (isMountedRef.current) {
           clearInterval(statusIntervalRef.current);
@@ -214,13 +229,12 @@ export default function UploadForm() {
           alert('Processing timed out. Please try again.');
         }
       }, 10 * 60 * 1000);
+      
     } catch (error) {
-      if (isMountedRef.current) {
-        alert(`Error: ${error.message}`);
-        console.error(error);
-        setProgress(0);
-        setUploading(false);
-      }
+      console.error('Upload error:', error);
+      alert(`Error: ${error.message}`);
+      setProgress(0);
+      setUploading(false);
     }
   };
 
@@ -247,6 +261,12 @@ export default function UploadForm() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // For the download button's onClick handler
+  const handleDownloadClick = () => {
+    console.log('Download button clicked, URL:', typeof downloadUrl === 'object' ? downloadUrl.download : downloadUrl);
+    // Then proceed with the download logic
   };
 
   return (
@@ -576,6 +596,7 @@ export default function UploadForm() {
                     {/* Download button - triggers download */}
                     <a 
                       href={typeof downloadUrl === 'object' ? downloadUrl.download : downloadUrl}
+                      onClick={handleDownloadClick}
                       className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ml-2"
                     >
                       Download

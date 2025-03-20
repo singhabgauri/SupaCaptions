@@ -9,6 +9,8 @@ const supabase = createClient(
 
 const GOOGLE_CLOUD_SERVICE_URL = process.env.GOOGLE_CLOUD_FFMPEG_SERVICE_URL;
 
+export const maxDuration = 60; // Increase timeout for the endpoint
+
 export async function POST(request) {
   try {
     console.log('Starting upload process...');
@@ -179,6 +181,7 @@ export async function POST(request) {
     // 8. Return final result
     console.log(`Returning response with job ID: ${jobId}`);
     return NextResponse.json({
+      jobId, // Add this to match what the frontend expects
       status: 'completed',
       videoUrl: publicUrl, // For viewing
       downloadUrl: `/api/direct-download?path=${encodeURIComponent(processedPath)}`, // For downloading
