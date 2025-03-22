@@ -16,7 +16,7 @@ export default function UploadForm() {
   const [file, setFile] = useState(null);
   const [fontSize, setFontSize] = useState("24");
   const [fontColor, setFontColor] = useState("#ffffff");
-  const [fontType, setFontType] = useState("Arial");
+  const [fontType, setFontType] = useState("Liberation Sans");
   const [highlightColor, setHighlightColor] = useState("#00ff00");
   const [animation, setAnimation] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -357,9 +357,19 @@ export default function UploadForm() {
                       onChange={(e) => setFontType(e.target.value)}
                       className="mt-1 block w-full rounded-lg border-white/10 bg-white/10 text-white focus:border-violet-400 focus:ring-violet-400"
                     >
-                      {["Arial", "Verdana", "Times New Roman", "Courier New", "Georgia"].map((font) => (
-                        <option key={font} value={font}>
-                          {font}
+                      {[
+                        {name: "Liberation Sans", style: "font-sans", desc: "(Arial style)"},
+                        {name: "Liberation Serif", style: "font-serif", desc: "(Times style)"},
+                        {name: "Liberation Mono", style: "font-mono", desc: "(Courier style)"},
+                        {name: "DejaVu Sans", style: "font-sans", desc: "(Modern)"},
+                        {name: "DejaVu Serif", style: "font-serif", desc: "(Elegant)"},
+                        {name: "DejaVu Sans Mono", style: "font-mono", desc: "(Code style)"},
+                        {name: "FreeSans", style: "font-sans", desc: "(Clean)"},
+                        {name: "FreeSerif", style: "font-serif", desc: "(Classic)"},
+                        {name: "Noto Sans", style: "font-sans", desc: "(International)"}
+                      ].map((font) => (
+                        <option key={font.name} value={font.name} className={font.style}>
+                          {font.name} {font.desc}
                         </option>
                       ))}
                     </select>

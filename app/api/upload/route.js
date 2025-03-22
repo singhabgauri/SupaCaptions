@@ -11,6 +11,19 @@ const GOOGLE_CLOUD_SERVICE_URL = process.env.GOOGLE_CLOUD_FFMPEG_SERVICE_URL;
 
 export const maxDuration = 60; // Increase timeout for the endpoint
 
+// Add this mapping function
+function mapFontToAvailable(requestedFont) {
+  const fontMap = {
+    'Arial': 'Liberation Sans',
+    'Verdana': 'DejaVu Sans',
+    'Times New Roman': 'Liberation Serif',
+    'Courier New': 'Liberation Mono',
+    'Georgia': 'DejaVu Serif'
+  };
+  
+  return fontMap[requestedFont] || 'Liberation Sans';
+}
+
 export async function POST(request) {
   try {
     console.log('Starting upload process...');
@@ -40,7 +53,7 @@ export async function POST(request) {
     const captionConfig = {
       fontSize: formData.get('fontSize'),
       fontColor: formData.get('fontColor'),
-      fontType: formData.get('fontType'),
+      fontType: mapFontToAvailable(formData.get('fontType')),
       textCase: formData.get('textCase'),
       position: formData.get('position'),
       enableHighlight: formData.get('enableHighlight') === 'true',
