@@ -3,6 +3,8 @@ import { useState, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { v4 as uuidv4 } from "uuid"; // For temporary solution
 import Link from "next/link";
+import { useAuth } from '../context/AuthContext';
+import AuthModal from './AuthModal';
 
 // Add this near the top of your component
 const supabase = createClient(
@@ -11,8 +13,9 @@ const supabase = createClient(
 );
 
 export default function UploadForm() {
-  // Add user state
-  const [user, setUser] = useState(null);
+  // Replace the existing user state with useAuth
+  const { user, loading, signOut } = useAuth();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   // State declarations
   const [file, setFile] = useState(null);
   const [fontSize, setFontSize] = useState("24");
@@ -65,28 +68,6 @@ export default function UploadForm() {
     };
   }, []);
 
-  // Add this useEffect to check for authentication
-  useEffect(() => {
-    // Check for existing session
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user || null);
-      
-      // Set up auth state change listener
-      const { data: authListener } = supabase.auth.onAuthStateChange(
-        (event, session) => {
-          setUser(session?.user || null);
-        }
-      );
-      
-      return () => {
-        authListener?.subscription?.unsubscribe();
-      };
-    };
-    
-    checkUser();
-  }, []);
-
   // Add cleanup on unmount
   useEffect(() => {
     return () => {
@@ -111,9 +92,16 @@ export default function UploadForm() {
     }
   };
 
-  // In the handleUpload function:
+  // Modify the handleUpload function to check for authentication first
   const handleUpload = async (e) => {
     e.preventDefault();
+    
+    // Check if user is logged in
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
+    
     setUploading(true);
     setProgress(10);
     setActiveStep(3);
@@ -250,7 +238,12 @@ export default function UploadForm() {
 
   // For now, let's add a shortcut for testing:
   const handleBypassAuth = () => {
-    setUser({ id: "temp-user-" + uuidv4(), email: "test@example.com" });
+    // This won't work anymore since we don't have setUser
+    // Instead, you'd need to modify your code to handle this differently
+    // Maybe just log a message for now
+    console.log("Auth bypass not available when using useAuth()");
+    // Or you could redirect to the login modal
+    setAuthModalOpen(true);
   };
 
   // Replace your current handleDownload function with this simpler version
@@ -291,18 +284,6 @@ export default function UploadForm() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black via-gray-950 to-black text-white">
-      {/* Dev-only temporary login */}
-      {!user && (
-        <div className="fixed top-4 right-4 z-50">
-          <button
-            onClick={handleBypassAuth}
-            className="px-4 py-2 bg-red-600/50 text-white text-sm rounded-lg"
-          >
-            Temporary Login (Dev Only)
-          </button>
-        </div>
-      )}
-      
       {/* Header with Logo */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-black/60 backdrop-blur-md border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -312,6 +293,51 @@ export default function UploadForm() {
                 #SupaCaptions
               </span>
             </Link>
+            
+            {user ? (
+              <div className="relative group">
+                <button 
+                  className="flex items-center h-16 px-2"
+                  data-tooltip={user.user_metadata?.full_name || user.email || 'User'}
+                >
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-violet-600 to-blue-600 user-avatar">
+                    <span className="text-white text-sm font-medium">
+                      {(user.email?.charAt(0) || user.user_metadata?.full_name?.charAt(0) || '?').toUpperCase()}
+                    </span>
+                  </div>
+                </button>
+                
+                {/* Dropdown Menu */}
+                <div className="absolute right-0 top-full mt-1 w-48 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden shadow-lg z-50">
+                  <div className="px-4 py-3 border-b border-white/10">
+                    <p className="text-sm font-medium text-white truncate">
+                      {user.user_metadata?.full_name || 'User'}
+                    </p>
+                    <p className="text-xs text-white/60 truncate">
+                      {user.email}
+                    </p>
+                  </div>
+                  <div className="py-1">
+                    <button
+                      onClick={() => signOut()}
+                      className="w-full px-4 py-2 text-sm text-left text-white/80 hover:bg-white/10 transition-colors"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAuthModalOpen(true)}
+                className="flex items-center h-16 px-4 bg-violet-600 hover:bg-violet-700 rounded-lg text-white text-sm"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                </svg>
+                Sign In
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -428,6 +454,25 @@ export default function UploadForm() {
 
           {/* Step 2: Style */}
           <div className={`transition-all duration-500 ${activeStep === 2 ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}`}>
+            {!user && (
+              <div className="mb-6 bg-gradient-to-r from-violet-500/20 to-blue-500/20 rounded-xl p-4 border border-violet-500/30">
+                <div className="flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-violet-300 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-sm text-white">
+                    <span className="font-medium">Sign in required.</span> Please {' '}
+                    <button 
+                      onClick={() => setAuthModalOpen(true)}
+                      className="text-violet-300 hover:text-violet-200 font-medium underline"
+                    >
+                      sign in
+                    </button> 
+                    {' '} to process your video and add captions.
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Video Preview */}
               <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-lg">
@@ -684,9 +729,18 @@ export default function UploadForm() {
               </button>
               <button
                 onClick={handleUpload}
-                className="px-8 py-2.5 bg-violet-600 hover:bg-violet-700 rounded-lg font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 focus:ring-offset-gray-900"
+                className={`px-8 py-2.5 rounded-lg font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 focus:ring-offset-gray-900 ${
+                  user 
+                    ? 'bg-violet-600 hover:bg-violet-700' 
+                    : 'bg-violet-600/50 hover:bg-violet-600 flex items-center'
+                }`}
               >
-                Process Video
+                {!user && (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                )}
+                {user ? 'Process Video' : 'Sign in to Process'}
               </button>
             </div>
           </div>
@@ -810,7 +864,28 @@ export default function UploadForm() {
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: rgba(139, 92, 246, 0.8);
         }
+
+        /* Add this for tooltips */
+        [data-tooltip]:hover::after {
+          content: attr(data-tooltip);
+          position: absolute;
+          bottom: -35px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(4px);
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+          white-space: nowrap;
+          z-index: 60;
+          pointer-events: none;
+        }
       `}</style>
+      <AuthModal 
+        isOpen={authModalOpen} 
+        onClose={() => setAuthModalOpen(false)} 
+      />
     </div>
   );
 }

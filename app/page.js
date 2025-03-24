@@ -3,10 +3,14 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from './context/AuthContext';
+import AuthModal from './components/AuthModal';
 
 export default function LandingPage() {
   const router = useRouter();
+  const { user, signOut } = useAuth();
   const [activeWord, setActiveWord] = useState(0);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const demoWords = ["Transform", "your", "videos", "with", "beautiful", "captions"];
   
   useEffect(() => {
@@ -17,6 +21,14 @@ export default function LandingPage() {
     
     return () => clearInterval(wordInterval);
   }, []);
+
+  // Add this useEffect to debug the user avatar URL issue
+  useEffect(() => {
+    if (user) {
+      console.log("User metadata:", user.user_metadata);
+      console.log("Avatar URL:", user.user_metadata?.avatar_url);
+    }
+  }, [user]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black via-gray-950 to-black text-white">
@@ -39,6 +51,55 @@ export default function LandingPage() {
               <a href="#pricing" className="text-sm text-white/70 hover:text-white transition-colors">
                 Pricing
               </a>
+              
+              {user ? (
+                <div className="relative group">
+                  <button className="flex items-center space-x-2 text-sm">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-violet-600 to-blue-600 user-avatar">
+                      <span className="text-white text-sm font-medium">
+                        {(user.email?.charAt(0) || user.user_metadata?.full_name?.charAt(0) || '?').toUpperCase()}
+                      </span>
+                    </div>
+                  </button>
+                  
+                  {/* Dropdown Menu */}
+                  <div className="absolute right-0 top-full mt-1 w-48 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden shadow-lg z-50">
+                    <div className="px-4 py-3 border-b border-white/10">
+                      <p className="text-sm font-medium text-white truncate">
+                        {user.user_metadata?.full_name || 'User'}
+                      </p>
+                      <p className="text-xs text-white/60 truncate">
+                        {user.email}
+                      </p>
+                    </div>
+                    <div className="py-1">
+                      <Link
+                        href="/app"
+                        className="block w-full px-4 py-2 text-sm text-left text-white/80 hover:bg-white/10 transition-colors"
+                      >
+                        Dashboard
+                      </Link>
+                      <button
+                        onClick={() => signOut()}
+                        className="w-full px-4 py-2 text-sm text-left text-white/80 hover:bg-white/10 transition-colors"
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setAuthModalOpen(true)}
+                  className="flex items-center px-4 py-2 bg-violet-600 hover:bg-violet-700 rounded-lg text-sm"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                  </svg>
+                  Sign In
+                </button>
+              )}
+
               <Link 
                 href="/app" 
                 className="px-4 py-2 bg-violet-600 hover:bg-violet-700 rounded-lg text-sm font-medium transition-colors"
@@ -64,12 +125,12 @@ export default function LandingPage() {
                 Transform your videos with beautiful, precisely timed captions that highlight each word as it's spoken.
               </p>
               <div className="mt-10 flex flex-col sm:flex-row gap-4">
-                <Link
-                  href="/app"
+                <button
+                  onClick={user ? () => router.push('/app') : () => setAuthModalOpen(true)}
                   className="px-8 py-3 bg-violet-600 hover:bg-violet-700 rounded-xl text-center font-medium transition-colors"
                 >
-                  Get Started
-                </Link>
+                  {user ? 'Go to Dashboard' : 'Get Started'}
+                </button>
                 <a
                   href="#demo"
                   className="px-8 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-center font-medium transition-colors"
@@ -284,12 +345,12 @@ export default function LandingPage() {
                   <span className="text-white/70">720p output resolution</span>
                 </li>
               </ul>
-              <Link
-                href="/app"
+              <button
+                onClick={user ? () => router.push('/app') : () => setAuthModalOpen(true)}
                 className="block w-full py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-center font-medium transition-colors"
               >
-                Get Started
-              </Link>
+                {user ? 'Go to Dashboard' : 'Get Started'}
+              </button>
             </div>
 
             {/* Pro Plan */}
@@ -328,12 +389,12 @@ export default function LandingPage() {
                   <span className="text-white/70">Word-level highlighting</span>
                 </li>
               </ul>
-              <Link
-                href="/app"
+              <button
+                onClick={user ? () => router.push('/app') : () => setAuthModalOpen(true)}
                 className="block w-full py-3 bg-violet-600 hover:bg-violet-700 border border-transparent rounded-xl text-center font-medium transition-colors"
               >
-                Get Started
-              </Link>
+                {user ? 'Go to Dashboard' : 'Get Started'}
+              </button>
             </div>
 
             {/* Enterprise Plan */}
@@ -369,12 +430,12 @@ export default function LandingPage() {
                   <span className="text-white/70">Priority processing</span>
                 </li>
               </ul>
-              <Link
-                href="/app"
+              <button
+                onClick={user ? () => router.push('/app') : () => setAuthModalOpen(true)}
                 className="block w-full py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-center font-medium transition-colors"
               >
-                Get Started
-              </Link>
+                {user ? 'Go to Dashboard' : 'Get Started'}
+              </button>
             </div>
           </div>
         </div>
@@ -414,6 +475,63 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+      <AuthModal 
+        isOpen={authModalOpen} 
+        onClose={() => setAuthModalOpen(false)} 
+      />
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        /* ...other styles... */
+        
+        /* Fix for broken avatar images */
+        .avatar-container {
+          position: relative;
+        }
+        
+        .avatar-container img {
+          position: relative;
+          z-index: 2;
+        }
+        
+        .avatar-container img:not([src]), 
+        .avatar-container img[src=""], 
+        .avatar-container img[src="null"], 
+        .avatar-container img[src="undefined"] {
+          opacity: 0;
+        }
+        
+        .avatar-fallback {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1;
+        }
+
+        /* User avatar styles */
+        .user-avatar {
+          background-size: 150% 150%;
+          animation: gradientMove 3s ease infinite;
+        }
+        
+        @keyframes gradientMove {
+          0% {
+            background-position: 0% 50%;
+          }
+          50% {
+            background-position: 100% 50%;
+          }
+          100% {
+            background-position: 0% 50%;
+          }
+        }
+      `}</style>
     </div>
   );
 }
