@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid"; // For temporary solution
 import Link from "next/link";
 import { useAuth } from '../context/AuthContext';
 import AuthModal from './AuthModal';
+import UpgradeModal from './UpgradeModal';
 
 // Add this near the top of your component
 const supabase = createClient(
@@ -38,11 +39,68 @@ export default function UploadForm() {
   const [currentJobId, setCurrentJobId] = useState(null);
   const [processedVideoUrl, setProcessedVideoUrl] = useState("");
   const [activeStep, setActiveStep] = useState(1); // Track the active step (1: Upload, 2: Style, 3: Process)
+  const [errorMessage, setErrorMessage] = useState("");
 
   // Add these refs to track mounted state
   const isMountedRef = useRef(true);
   const statusIntervalRef = useRef(null);
   const safetyTimeoutRef = useRef(null);
+
+  // Add these imports and state variables to your UploadForm component
+  const [usageData, setUsageData] = useState(null);
+  const [isLoadingUsage, setIsLoadingUsage] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  // Update your fetchUserUsage function to provide default values
+  const fetchUserUsage = async () => {
+    if (!user) return;
+    
+    try {
+      setIsLoadingUsage(true);
+      const response = await fetch('/api/usage', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.id}`
+        }
+      });
+      
+      if (!response.ok) throw new Error('Failed to fetch usage data');
+      
+      let data = await response.json();
+      
+      // Set default values if any properties are missing
+      data = {
+        usedCount: 0,
+        freeLimit: 5,
+        remaining: 5,
+        isPaidUser: false,
+        percentUsed: 0,
+        ...data
+      };
+      
+      setUsageData(data);
+      console.log('User usage data:', data);
+    } catch (error) {
+      console.error('Error fetching usage data:', error);
+      // Set default values if fetch fails
+      setUsageData({
+        usedCount: 0,
+        freeLimit: 5,
+        remaining: 5,
+        isPaidUser: false,
+        percentUsed: 0
+      });
+    } finally {
+      setIsLoadingUsage(false);
+    }
+  };
+
+  // Call this when the component mounts and when user changes
+  useEffect(() => {
+    if (user) {
+      fetchUserUsage();
+    }
+  }, [user]);
 
   // Add this useEffect to inject global styles for select options
   useEffect(() => {
@@ -92,7 +150,7 @@ export default function UploadForm() {
     }
   };
 
-  // Modify the handleUpload function to check for authentication first
+  // Update your handleUpload function to correctly name the file in the FormData
   const handleUpload = async (e) => {
     e.preventDefault();
     
@@ -102,137 +160,100 @@ export default function UploadForm() {
       return;
     }
     
+    // Check if a file is selected
+    if (!file) {
+      alert("Please select a video file");
+      return;
+    }
+    
+    // For free users, check if they have exceeded their limit
+    if (!usageData?.isPaidUser && usageData?.remaining <= 0) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    
+    // Continue with upload and processing
     setUploading(true);
     setProgress(10);
     setActiveStep(3);
     
     try {
-      // Prepare form data
+      // Create form data - IMPORTANT: Use "video" as the field name to match the API expectation
       const formData = new FormData();
-      formData.append('video', file);
+      formData.append('video', file); // Changed from 'file' to 'video'
       
-      // Add your caption configuration
-      Object.entries({
+      // Create caption settings object from state variables
+      const captionSettings = {
         fontSize,
         fontColor,
         fontType,
+        highlightColor,
+        animation,
         textCase,
         position,
         enableHighlight,
-        highlightColor,
-        animation,
         enableBorder,
         borderColor,
         borderSize
-      }).forEach(([key, value]) => {
-        formData.append(key, value);
-      });
-
-      // In your handleUpload function, add before the fetch call:
-      console.log('Sending upload request with form data:', {
-        video: file.name,
-        fontSize,
-        fontColor,
-        fontType,
-        textCase,
-        position,
-        enableHighlight,
-        highlightColor,
-        animation,
-        enableBorder,
-        borderColor,
-        borderSize
+      };
+      
+      // Add each caption setting as an individual form field
+      // This is important for the API to properly read the values
+      Object.entries(captionSettings).forEach(([key, value]) => {
+        formData.append(key, value.toString());
       });
       
-      // Send the upload request
+      // Upload the file and get processing started
       const response = await fetch('/api/upload', {
         method: 'POST',
+        body: formData,
         headers: {
-          'x-user-id': user?.id || 'anonymous'
-        },
-        body: formData
+          'Authorization': `Bearer ${user.id}`,
+          'x-user-id': user.id // Add this header to identify the user
+        }
       });
       
-      const data = await response.json();
-      console.log('Response from upload API:', data);
-      
-      // Check for immediate completion first
-      if (data.status === 'completed') {
-        setProgress(100);
-        setProcessedVideoUrl(data.videoUrl);
-        setDownloadUrl({
-          view: data.videoUrl,
-          download: data.downloadUrl
-        });
-        setUploading(false);
-        return;
-      }
-      
-      // If we make it here, the job is in progress and we need to poll
-      setProgress(30);
-      
-      // Start polling for status if we have a job ID
-      if (!data.jobId) {
-        console.error('No job ID returned from server:', data);
-        throw new Error('Server did not return a job ID');
-      }
-      
-      const jobId = data.jobId;
-      
-      // Start polling for job status
-      statusIntervalRef.current = setInterval(async () => {
-        try {
-          const statusResponse = await fetch(`/api/job-status?jobId=${jobId}`);
-          
-          if (!statusResponse.ok) {
-            console.error(`Status check failed: ${statusResponse.status}`);
-            return;
-          }
-          
-          const statusData = await statusResponse.json();
-          console.log(`Job ${jobId} status:`, statusData);
-          
-          // Only update if component still mounted
-          if (!isMountedRef.current) return;
-          
-          if (statusData.status === 'completed') {
-            clearInterval(statusIntervalRef.current);
-            setProgress(100);
-            setProcessedVideoUrl(statusData.videoUrl);
-            setDownloadUrl({
-              view: statusData.videoUrl,
-              download: statusData.downloadUrl
-            });
-            setUploading(false);
-          } else if (statusData.status === 'failed') {
-            clearInterval(statusIntervalRef.current);
-            setUploading(false);
-            setProgress(0);
-            alert(statusData.error || 'Processing failed');
-          } else {
-            // Still processing
-            setProgress(prev => Math.min(prev + 5, 90));
-          }
-        } catch (statusError) {
-          console.error('Error checking status:', statusError);
-        }
-      }, 3000);
-      
-      // Safety cleanup after 10 minutes
-      safetyTimeoutRef.current = setTimeout(() => {
-        if (isMountedRef.current) {
-          clearInterval(statusIntervalRef.current);
+      // Handle potential upgrade required response
+      if (response.status === 403) {
+        const data = await response.json();
+        if (data.limitReached) {
           setUploading(false);
-          setProgress(0);
-          alert('Processing timed out. Please try again.');
+          setShowUpgradeModal(true);
+          return;
         }
-      }, 10 * 60 * 1000);
+      }
       
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('Error response:', errorData);
+        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+      }
+      
+      // Parse the response to get the job ID or download URL
+      const data = await response.json();
+      console.log('Upload response:', data);
+      
+      if (data.videoUrl || data.downloadUrl) {
+        // Processing is complete
+        setUploading(false);
+        setProgress(100);
+        setDownloadUrl(data.videoUrl || data.downloadUrl);
+        
+        // Refresh usage data after successful processing
+        fetchUserUsage();
+      } else if (data.jobId) {
+        // Asynchronous processing - poll for status
+        setCurrentJobId(data.jobId);
+        pollJobStatus(data.jobId);
+      } else {
+        console.error('Unexpected response format:', data);
+        throw new Error('Invalid response from server');
+      }
     } catch (error) {
-      console.error('Upload error:', error);
-      alert(`Error: ${error.message}`);
-      setProgress(0);
+      console.error('Error during upload or processing:', error);
       setUploading(false);
+      setProgress(0);
+      setErrorMessage(`Processing failed: ${error.message}`);
     }
   };
 
@@ -718,30 +739,63 @@ export default function UploadForm() {
               </div>
             </div>
             
-            {/* Navigation Buttons */}
-            <div className="mt-8 flex justify-end space-x-4">
-              <button
-                type="button"
-                onClick={() => setActiveStep(1)}
-                className="px-6 py-2.5 border border-white/10 rounded-lg text-white/80 hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 focus:ring-offset-gray-900"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleUpload}
-                className={`px-8 py-2.5 rounded-lg font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 focus:ring-offset-gray-900 ${
-                  user 
-                    ? 'bg-violet-600 hover:bg-violet-700' 
-                    : 'bg-violet-600/50 hover:bg-violet-600 flex items-center'
-                }`}
-              >
-                {!user && (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            {/* Navigation Buttons with Usage Bar */}
+            <div className="mt-8">
+              {/* Usage Indicator - NEW */}
+              {user && usageData && !usageData.isPaidUser && (
+                <div className="mb-4 p-3 bg-white/5 rounded-lg border border-white/10">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="text-sm text-white/70">
+                      <span className="font-medium text-violet-300">{usageData.remaining}</span> free {usageData.remaining === 1 ? 'video' : 'videos'} remaining
+                    </span>
+                    <span className="text-xs text-white/50">
+                      {usageData.usedCount}/{usageData.freeLimit}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-black/30 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-violet-600 to-blue-600 rounded-full" 
+                      style={{ width: `${Math.min(100, (usageData.usedCount / usageData.freeLimit) * 100)}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Pro Account Badge */}
+              {user && usageData && usageData.isPaidUser && (
+                <div className="mb-4 py-1.5 px-3 bg-gradient-to-r from-violet-600/20 to-blue-600/20 rounded-lg border border-violet-500/30 inline-flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-violet-300 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                )}
-                {user ? 'Process Video' : 'Sign in to Process'}
-              </button>
+                  <span className="text-sm font-medium text-violet-300">Pro Account</span>
+                </div>
+              )}
+              
+              {/* Buttons */}
+              <div className="flex justify-end space-x-4">
+                <button
+                  type="button"
+                  onClick={() => setActiveStep(1)}
+                  className="px-6 py-2.5 border border-white/10 rounded-lg text-white/80 hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 focus:ring-offset-gray-900"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleUpload}
+                  className={`px-8 py-2.5 rounded-lg font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 focus:ring-offset-gray-900 ${
+                    user 
+                      ? 'bg-violet-600 hover:bg-violet-700' 
+                      : 'bg-violet-600/50 hover:bg-violet-600 flex items-center'
+                  }`}
+                >
+                  {!user && (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  )}
+                  {user ? 'Process Video' : 'Sign in to Process'}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -770,6 +824,29 @@ export default function UploadForm() {
                     <p className="mt-4 text-center text-sm text-white/60">
                       This may take a few minutes depending on video length
                     </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Error Message */}
+              {errorMessage && (
+                <div className="mt-4 p-4 bg-red-500/20 border border-red-500/30 rounded-lg">
+                  <div className="flex items-start">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-400 mr-2 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-sm text-red-200">{errorMessage}</p>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      onClick={() => {
+                        setErrorMessage("");
+                        setActiveStep(1);
+                      }}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm"
+                    >
+                      Try Again
+                    </button>
                   </div>
                 </div>
               )}
@@ -882,6 +959,11 @@ export default function UploadForm() {
           pointer-events: none;
         }
       `}</style>
+      <UpgradeModal 
+        isOpen={showUpgradeModal} 
+        onClose={() => setShowUpgradeModal(false)} 
+        usageData={usageData}
+      />
       <AuthModal 
         isOpen={authModalOpen} 
         onClose={() => setAuthModalOpen(false)} 

@@ -11,6 +11,9 @@ const GOOGLE_CLOUD_SERVICE_URL = process.env.GOOGLE_CLOUD_FFMPEG_SERVICE_URL;
 
 export const maxDuration = 60; // Increase timeout for the endpoint
 
+// Define free tier limits
+const FREE_TIER_LIMIT = 5; // 5 videos per account
+
 // Add this mapping function
 function mapFontToAvailable(requestedFont) {
   const fontMap = {
@@ -33,6 +36,43 @@ export async function POST(request) {
     }
     
     const userId = request.headers.get('x-user-id') || 'anonymous';
+    
+    // Skip usage check for anonymous users (they'll be prompted to sign in)
+    if (userId !== 'anonymous') {
+      // Check if user has reached their free tier limit
+      const { data: jobsData, error: jobsError } = await supabase
+        .from('processing_jobs')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('status', 'completed');
+      
+      if (jobsError) {
+        console.error('Error checking usage limits:', jobsError);
+        // Continue anyway as a fallback
+      } else {
+        const usedCount = jobsData?.length || 0;
+        
+        // Check if the user is on a paid plan
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('is_paid_user')
+          .eq('id', userId)
+          .single();
+        
+        const isPaidUser = userData?.is_paid_user || false;
+        
+        // If not a paid user and over limit, return error
+        if (!isPaidUser && usedCount >= FREE_TIER_LIMIT) {
+          return NextResponse.json({ 
+            error: 'Free tier limit reached', 
+            limitReached: true,
+            usedCount,
+            limit: FREE_TIER_LIMIT
+          }, { status: 403 });
+        }
+      }
+    }
+    
     const formData = await request.formData();
     const video = formData.get('video');
     
